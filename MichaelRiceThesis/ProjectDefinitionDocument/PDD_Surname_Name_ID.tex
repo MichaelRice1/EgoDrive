@@ -1,0 +1,89 @@
+\documentclass[11pt]{article}
+\usepackage[margin=0.4in]{geometry}
+\usepackage[all]{xy}
+
+\usepackage{amsmath,amsthm,amssymb,color,latexsym,graphicx}
+\usepackage{geometry}        
+\geometry{a4paper, top=1cm}    
+
+\usepackage[scaled]{helvet}
+\renewcommand\familydefault{\sfdefault} 
+\usepackage[T1]{fontenc}
+
+\usepackage{tabto}
+
+\usepackage[numbers]{natbib}
+
+\linespread{1.0}
+
+\pagenumbering{gobble}
+
+\newcommand{\sect}[1]{\begin{center}\textbf{#1}\end{center}}
+
+\begin{document}
+	
+\noindent Student name: Michael Rice \tabto{8.5cm} Supervisor contact name: Waqar Shahid Qureshi \\
+\noindent Student number: 20347541 \tabto{8.5cm} Supervisor contact email: waqarshahid.qureshi@universityofgalway.ie 
+\vspace{0.1cm}
+
+\sect{From Sight to Insight: Harnessing Gaze and LLMs to provide Real-Time Educational Assistance}
+
+\sect{Introduction}
+
+Advancements in wearable technology and artificial intelligence have opened new possibilities for real-time educational assistance. 
+This project leverages Meta’s Project Aria \cite{engelProjectAriaNew2023} glasses, object detection, and large language models (LLMs) 
+to create a gaze-based system that provides users with contextual information about the objects they focus on. By integrating 
+egocentric gaze tracking with AI-driven content generation, this system aims to enhance learning in various domains.
+
+\sect{Background Research or Context}
+
+A wide variety of regions will require extensive background research in order to complete this project. Firstly, I will need to 
+understand the hardware, the Project Aria Glasses, that I will be using, their usefulness to my project and the proprietary file system that comes with them, VRS.
+Following this, I will research object detection options, along with each of their strengths and 
+weaknesses.
+Finally, research into Large Language Models (LLMs) will be required. This will involve understanding the various open-source and 
+viable LLM options available and how they can be refined for my specific use case.
+
+\sect{Proposed Project}
+This project will develop a real-time educational aid that identifies objects in a user's field of view and provides relevant 
+information using LLMs. The system will rely on Project Aria’s eye tracking cameras and gaze estimation to determine where the user 
+is looking. An object detection algorithm (e.g., YOLO \cite{redmonYouOnlyLook2016} or Detectron2) will then classify the object, and an LLM will generate 
+concise, context-aware descriptions or explanations.
+
+The key components of the system include: Gaze Tracking, Object Detection and Recognition, and Contextual Information Retrieval.
+
+This tool has applications in education, professional training, and even specialized fields such as agriculture, where it can provide
+detailed insights into plant species or farming equipment based on gaze detection.
+
+
+\sect{Timeline}
+
+February - March 2025: Literature Research and Getting Project Aria Glasses up and running. \\
+
+April - May 2025: Creating base implementations of each algorithmic aspect.  \\
+
+June - July 2025: Move from base implementations to final models and integrating them all together.  \\
+
+August 2025: Tidying up final implementation and writing thesis. \\
+
+
+
+
+
+\bibliographystyle{IEEEtranN}
+
+\renewcommand{\refname}{{\normalsize \sect{References}}}
+
+% >>>>> Unless a different referencing style is stipulated by your supervisor, it is strongly recommended to use IEEE style: https://libguides.ncirl.ie/referencingandavoidingplagiarism/ieee
+
+% It is strongly recommended to use a BibTeX file (.bib) for the bibliography, as this makes it much easier to
+% collect references and to reuse them later in other LaTeX documents: 
+\bibliography{/mnt/c/Users/athen/Desktop/Thesis/Thesis.bib}
+
+% However, alternatively references can also be listed manually like this (not recommended):
+%\begin{thebibliography}{10}	
+%\bibitem{Linde1980} Y. Linde, A. Buzo and R.M. Gray, ``An algorithm for vector quantizer design,'' IEEE Transactions on Communications, vol. 28, pp. 84-95, January 1980. 
+%\bibitem{Fanty1993} M. Fanty, P. Schmid, and R. Cole, ``City name recognition over the telephone,'' in Proceedings Third International Conference on Acoustics, Speech and Signal Processing, Minneapolis, USA, pp. 549-552, 1993. 
+%\end{thebibliography}
+
+\end{document}
