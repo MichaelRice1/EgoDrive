@@ -11,11 +11,22 @@ import projectaria_tools.core.mps as mps
 from projectaria_tools.core.mps.utils import get_nearest_wrist_and_palm_pose
 from projectaria_tools.core.mps.utils import (
     get_gaze_vector_reprojection,
-    get_nearest_eye_gaze
+    get_nearest_eye_gaze,
+    get_nearest_pose
 )
 import argparse
-from Coding.notebooks_and_scripts.OtherModelScripts import ego_blur
 import torch
+from projectaria_tools.core.calibration import (
+    device_calibration_from_json_string,
+    distort_by_calibration,
+    get_linear_camera_calibration,
+)
+import cv2
+
+import sys
+sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/notebooks_and_scripts')
+from OtherModelScripts import ego_blur 
+
 
 class VRSDataExtractor():
 
@@ -29,7 +40,7 @@ class VRSDataExtractor():
             "camera-slam-right":StreamId("1201-2"),
             "camera-rgb":StreamId("214-1"),
             "camera-eyetracking":StreamId("211-1"),
-            "microphone":StreamId("231-1"),
+            "mic":StreamId("231-1"),
             "gps":StreamId("281-1"),
             "gps-app":StreamId("281-2"),
             "imu-right":StreamId("1202-1"),
@@ -41,7 +52,7 @@ class VRSDataExtractor():
         self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         self.result = {}
 
-    def get_device() -> str:
+    def get_device(self) -> str:
         """
         Return the device type
         """
@@ -51,6 +62,7 @@ class VRSDataExtractor():
             else f"cuda:{torch.cuda.current_device()}"
         )
     
+
     def get_image_data(self, start_index = 0, end_index = None):
 
         '''
@@ -119,7 +131,8 @@ class VRSDataExtractor():
         except:
             print("Error extracting slam images, likely not present in VRS file ")
     
-    def get_mps(self, gaze_path, hand_path, start_index = 0, end_index = None):
+
+    def get_gaze_hand(self, gaze_path, hand_path, start_index = 0, end_index = None):
 
         '''
         Extracts eyegaze points from the VRS file based on the index/time domain. The eyegaze points are extracted from the following streams:
@@ -128,15 +141,17 @@ class VRSDataExtractor():
 
         gaze_points = {}
         hw_points = {}
+        
 
         # et_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-eyetracking'], self.time_domain)
-
         # et_end_time = self.provider.get_last_time_ns(self.stream_mappings['camera-eyetracking'], self.time_domain)
-
 
 
         gaze_cpf = mps.read_eyegaze(gaze_path)
         handwrist_points  = mps.hand_tracking.read_wrist_and_palm_poses(hand_path)
+        
+
+        
 
         num_et = len(gaze_cpf)
         num_hw = len(handwrist_points)
@@ -146,8 +161,7 @@ class VRSDataExtractor():
 
 
         for ts in hw_ts:
-            
-
+    
             wrist_and_palm_pose = get_nearest_wrist_and_palm_pose(handwrist_points, ts)
 
             if wrist_and_palm_pose is not None:
@@ -206,35 +220,123 @@ class VRSDataExtractor():
         self.result['gaze'] = gaze_points
         print(f"Extracted {len(self.result['gaze'])} gaze points from gaze stream")
 
-    def get_non_image_data(self):
+
+    def get_slam_data(self, slam_path, start_index = 0, end_index = None):
+
+        open_loop_points = {}
+        closed_loop_points = {}
+
+        open_loop_path = os.path.join(slam_path, "open_loop_trajectory.csv")
+        closed_loop_path = os.path.join(slam_path, "closed_loop_trajectory.csv")
+
+        open_loop_traj = mps.read_open_loop_trajectory(open_loop_path)
+        closed_loop_traj = mps.read_closed_loop_trajectory(closed_loop_path)
+
+        open_loop_ts = [open_loop_traj[i].tracking_timestamp.total_seconds() * 1e9 for i in range(len(open_loop_traj))]
+        closed_loop_ts = [closed_loop_traj[i].tracking_timestamp.total_seconds() * 1e9 for i in range(len(closed_loop_traj))]
+
+        for ts in open_loop_ts:
+            open_loop_point = get_nearest_pose(open_loop_traj, ts)
+
+            if open_loop_point is not None:
+
+                # print(f'open loop point',open_loop_point)
+
+                T_world_device = open_loop_point.transform_odometry_device
+                
+                rgb_stream_label = self.provider.get_label_from_stream_id(self.stream_mappings['camera-rgb'])
+                device_calibration = self.provider.get_device_calibration()
+                rgb_camera_calibration = device_calibration.get_camera_calib(rgb_stream_label)
+
+                T_device_rgb_camera = rgb_camera_calibration.get_transform_device_camera()
+                T_world_rgb_camera = T_world_device @ T_device_rgb_camera
+
+                open_loop_point = {
+                    "tracking_timestamp": open_loop_point.tracking_timestamp,
+                    "quality_score": open_loop_point.quality_score,
+                    "linear_velocity": open_loop_point.device_linear_velocity_odometry,
+                    "angular_velocity_device": open_loop_point.angular_velocity_device,
+                    "t_world_device": T_world_device,
+                    "gravity": open_loop_point.gravity_odometry,
+                    "world_rgb_camera_translation": T_world_rgb_camera,
+                    "device_rgb_camera_rotation": T_device_rgb_camera
+                }
+
+                open_loop_points[ts] = open_loop_point
+            
+        self.result['open_loop'] = open_loop_points
+
+        print(f"Extracted {len(self.result['open_loop'])} open loop points from open loop stream")
+
+        for ts in closed_loop_ts:
+
+            closed_loop_point = get_nearest_pose(closed_loop_traj, ts)
+
+            if closed_loop_point is not None:
+
+                T_world_device = closed_loop_point.transform_world_device
+                
+                rgb_stream_label = self.provider.get_label_from_stream_id(self.stream_mappings['camera-rgb'])
+                device_calibration = self.provider.get_device_calibration()
+                rgb_camera_calibration = device_calibration.get_camera_calib(rgb_stream_label)
+
+                T_device_rgb_camera = rgb_camera_calibration.get_transform_device_camera()
+                T_world_rgb_camera = T_world_device @ T_device_rgb_camera
+
+                closed_loop_point = {
+                    "tracking_timestamp": closed_loop_point.tracking_timestamp,
+                    "quality_score": closed_loop_point.quality_score,
+                    "linear_velocity": closed_loop_point.device_linear_velocity_device,
+                    "angular_velocity_device": closed_loop_point.angular_velocity_device,
+                    "translation_world": T_world_device,
+                    "gravity": closed_loop_point.gravity_world,
+                    "world_rgb_camera_translation": T_world_rgb_camera,
+                    "device_rgb_camera_rotation": T_device_rgb_camera
+                }
+
+                closed_loop_points[ts] = closed_loop_point
+
+        self.result['closed_loop'] = closed_loop_points
+        print(f"Extracted {len(self.result['closed_loop'])} closed loop points from closed loop stream")
+
+    #TODO - stop this from loading objects
+    def get_IMU_data(self, start_index = 0, end_index = None):
 
         '''
-        Extracts all non-image data from the VRS file
+        Extracts all IMU data from the VRS file
         '''
 
+    
+        imu_right, imu_left = {},{}
 
-        gps_data, gps_app, imu_right, imu_left, microphone = {},{},{},{}, {}
-
-
-
-        gps_label = 'gps'
-        gps_app_label = 'gps-app'
         imu_right_label = 'imu-right'
         imu_left_label = 'imu-left'
-        microphone_label = 'microphone'
 
-        num_data_gps = self.provider.get_num_data(self.provider.get_stream_id_from_label(gps_label))
-        num_data_gps_app = self.provider.get_num_data(self.provider.get_stream_id_from_label(gps_app_label))
         num_data_imu_right = self.provider.get_num_data(self.provider.get_stream_id_from_label(imu_right_label))
         num_data_imu_left = self.provider.get_num_data(self.provider.get_stream_id_from_label(imu_left_label))
-        num_data_microphone = self.provider.get_num_data(self.provider.get_stream_id_from_label(microphone_label))
-        
 
-        gps_ts = self.provider.get_timestamps_ns(self.stream_mappings['gps'], self.time_domain)
-        gps_app_ts = self.provider.get_timestamps_ns(self.stream_mappings['gps-app'], self.time_domain)
+        if end_index is None:
+            end_index = num_data_imu_right
+    
+
         imu_right_ts = self.provider.get_timestamps_ns(self.stream_mappings['imu-right'], self.time_domain)
         imu_left_ts = self.provider.get_timestamps_ns(self.stream_mappings['imu-left'], self.time_domain)
-        microphone_ts = self.provider.get_timestamps_ns(self.stream_mappings['microphone'], self.time_domain)
+
+
+        for ind in range(start_index, end_index):
+            imu_right_point = self.provider.get_imu_data_by_index(self.stream_mappings['imu-right'], ind)
+
+            if ind < num_data_imu_left:
+                imu_left_point = self.provider.get_imu_data_by_index(self.stream_mappings['imu-left'], ind)
+                imu_left[imu_left_ts[ind]] = imu_left_point
+                
+            imu_right[imu_right_ts[ind]] = imu_right_point
+        
+        self.result['imu_right'] = imu_right
+        self.result['imu_left'] = imu_left
+
+        print(f"Extracted {len(self.result['imu_right'])} data points from {imu_right_label} stream")
+        print(f"Extracted {len(self.result['imu_left'])} data points from {imu_left_label} stream")
 
     def save_data(self, results, output_path):
 
@@ -244,7 +346,6 @@ class VRSDataExtractor():
 
         pass
 
-    #TODO - make sure working
     def ego_blur( self,
                 egoblur_face_path: str = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_face/ego_blur_face.jit",
                 egoblur_lp_path: str = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_lp/ego_blur_lp.jit",
@@ -303,25 +404,67 @@ class VRSDataExtractor():
                 output_video_fps,
             )
 
-    #TODO
-    def rgb_undistort(self, results):
-        pass
+    #TODO - unsure if will work
+    def rgb_undistort(self, path):
+
+        '''
+        Undistort the extracted images from the VRS file
+        '''
+
+        # rgb_images = results['rgb']
+
+
+
+        samp = cv2.imread(path)
+
+        with open('MSc_AI_Thesis/Coding/other/calibration.json') as f:
+            sc = f.read()
+
+
+        sensors_calib = device_calibration_from_json_string(sc)
+        rgb_calib = sensors_calib.get_camera_calib("camera-rgb")
+        dst_calib = get_linear_camera_calibration(512, 512, 150, "camera-rgb")
+
+        # for img in rgb_images:
+
+        undistorted_rgb_image = distort_by_calibration(
+                        samp, dst_calib, rgb_calib
+                    )
+        
+        plt.imshow(np.array(undistorted_rgb_image))
+        plt.show()
+
+        
+
+
+        
 
 
 if __name__ == "__main__":
-    VRS_DE = VRSDataExtractor()
+    VRS_DE = VRSDataExtractor('sampledata/sample3/Driving_Profile_Test.vrs')
 
-    args = VRS_DE.parse_args()
 
-    VRS_DE.get_image_data()
+    # VRS_DE.get_image_data()
 
-    print(f' sample image entry {list(VRS_DE.result["rgb"].items())[0]}')
+    # print(f' sample image entry {list(VRS_DE.result["rgb"].items())[0]}')
 
-    VRS_DE.get_mps('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/sample3/mps_Driving_Profile_Test_vrs/eye_gaze/general_eye_gaze.csv', 
-                   'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/sample3/mps_Driving_Profile_Test_vrs/hand_tracking/wrist_and_palm_poses.csv')
+    # VRS_DE.get_IMU_data()
+
+    # print(f' sample imu-right entry {list(VRS_DE.result["imu_right"].items())[0][1]}')
+    # print(f' sample imu-left entry {list(VRS_DE.result["imu_left"].items())[0][1]}')
+
+    # VRS_DE.get_gaze_hand('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/sample3/mps_Driving_Profile_Test_vrs/eye_gaze/general_eye_gaze.csv', 
+    #                'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/sample3/mps_Driving_Profile_Test_vrs/hand_tracking/wrist_and_palm_poses.csv',)
     
-    print(f' sample gaze entry {list(VRS_DE.result["gaze"].items())[0]}')
-    print(f' sample handwrist entry {list(VRS_DE.result["handwrist"].items())[0]}')
+    # print(f' sample gaze entry {list(VRS_DE.result["gaze"].items())[0]}')
+    # print(f' sample handwrist entry {list(VRS_DE.result["handwrist"].items())[0]}')
+
+    # print(f' sample open loop entry {list(VRS_DE.result["open_loop"].items())[0]}')
+
+    # VRS_DE.ego_blur(input_image_path = 'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg',
+    #                 output_image_path = 'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest_blurred.jpg')
+
+    # VRS_DE.rgb_undistort('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg')
 
 
 
