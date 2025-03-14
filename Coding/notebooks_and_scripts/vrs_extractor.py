@@ -13,11 +13,14 @@ from projectaria_tools.core.mps.utils import (
     get_gaze_vector_reprojection,
     get_nearest_eye_gaze
 )
+import argparse
+from Coding.notebooks_and_scripts.OtherModelScripts import ego_blur
+import torch
 
 class VRSDataExtractor():
 
 
-    def __init__(self, vrs_path):
+    def __init__(self, vrs_path: str):
         self.path = vrs_path
         self.provider = data_provider.create_vrs_data_provider(self.path)
 
@@ -38,8 +41,16 @@ class VRSDataExtractor():
         self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         self.result = {}
 
-
-
+    def get_device() -> str:
+        """
+        Return the device type
+        """
+        return (
+            "cpu"
+            if not torch.cuda.is_available()
+            else f"cuda:{torch.cuda.current_device()}"
+        )
+    
     def get_image_data(self, start_index = 0, end_index = None):
 
         '''
@@ -108,8 +119,6 @@ class VRSDataExtractor():
         except:
             print("Error extracting slam images, likely not present in VRS file ")
     
-
-
     def get_mps(self, gaze_path, hand_path, start_index = 0, end_index = None):
 
         '''
@@ -197,12 +206,112 @@ class VRSDataExtractor():
         self.result['gaze'] = gaze_points
         print(f"Extracted {len(self.result['gaze'])} gaze points from gaze stream")
 
+    def get_non_image_data(self):
+
+        '''
+        Extracts all non-image data from the VRS file
+        '''
 
 
-    
+        gps_data, gps_app, imu_right, imu_left, microphone = {},{},{},{}, {}
+
+
+
+        gps_label = 'gps'
+        gps_app_label = 'gps-app'
+        imu_right_label = 'imu-right'
+        imu_left_label = 'imu-left'
+        microphone_label = 'microphone'
+
+        num_data_gps = self.provider.get_num_data(self.provider.get_stream_id_from_label(gps_label))
+        num_data_gps_app = self.provider.get_num_data(self.provider.get_stream_id_from_label(gps_app_label))
+        num_data_imu_right = self.provider.get_num_data(self.provider.get_stream_id_from_label(imu_right_label))
+        num_data_imu_left = self.provider.get_num_data(self.provider.get_stream_id_from_label(imu_left_label))
+        num_data_microphone = self.provider.get_num_data(self.provider.get_stream_id_from_label(microphone_label))
+        
+
+        gps_ts = self.provider.get_timestamps_ns(self.stream_mappings['gps'], self.time_domain)
+        gps_app_ts = self.provider.get_timestamps_ns(self.stream_mappings['gps-app'], self.time_domain)
+        imu_right_ts = self.provider.get_timestamps_ns(self.stream_mappings['imu-right'], self.time_domain)
+        imu_left_ts = self.provider.get_timestamps_ns(self.stream_mappings['imu-left'], self.time_domain)
+        microphone_ts = self.provider.get_timestamps_ns(self.stream_mappings['microphone'], self.time_domain)
+
+    def save_data(self, results, output_path):
+
+        '''
+        Save the extracted data to the output path
+        '''
+
+        pass
+
+    #TODO - make sure working
+    def ego_blur( self,
+                egoblur_face_path: str = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_face/ego_blur_face.jit",
+                egoblur_lp_path: str = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_lp/ego_blur_lp.jit",
+                input_image_path: str | None = None,
+                output_image_path: str | None = None,
+                input_video_path: str | None = None,
+                output_video_path: str | None = None,
+            ) -> None:
+
+        '''
+        Apply ego-blur to the extracted images from the VRS file to make data anonymous
+        '''
+
+
+        face_model_score_threshold = 0.9
+        lp_model_score_threshold = 0.9
+        nms_iou_threshold = 0.3
+        scale_factor_detections = 1.0
+        output_video_fps = 15
+
+
+        face_detector = torch.jit.load(egoblur_face_path, map_location="cpu").to(
+            self.get_device()
+        )
+        face_detector.eval()
+
+        lp_detector = torch.jit.load(egoblur_lp_path, map_location="cpu").to(
+            self.get_device()
+        )
+        lp_detector.eval()
+
+        if input_image_path is not None and output_image_path is not None:
+
+            output_image = ego_blur.visualize_image(
+                input_image_path,
+                face_detector,
+                lp_detector,
+                face_model_score_threshold,
+                lp_model_score_threshold,
+                nms_iou_threshold,
+                output_image_path,
+                scale_factor_detections,
+            )
+
+        if input_video_path is not None and output_video_path is not None:
+        
+            ego_blur.visualize_video(
+                input_video_path,
+                face_detector,
+                lp_detector,
+                face_model_score_threshold,
+                lp_model_score_threshold,
+                nms_iou_threshold,
+                output_video_path,
+                scale_factor_detections,
+                output_video_fps,
+            )
+
+    #TODO
+    def rgb_undistort(self, results):
+        pass
+
 
 if __name__ == "__main__":
-    VRS_DE = VRSDataExtractor('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/sample2/Testing_MPS.vrs')
+    VRS_DE = VRSDataExtractor()
+
+    args = VRS_DE.parse_args()
 
     VRS_DE.get_image_data()
 
