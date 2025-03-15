@@ -4,7 +4,11 @@ Simple overview of use/purpose.
 
 ## Description
 
-An in-depth paragraph about your project and overview of use.
+Project Aria 
+
+![Alt text](images/aria.jpeg?raw=true "Project Aria")
+
+
 
 ## Getting Started
 
@@ -37,8 +41,8 @@ command to run if program contains helper info
 
 Contributors names and contact info
 
-ex. Dominique Pizzie  
-ex. [@DomPizzie](https://twitter.com/dompizzie)
+Michael Rice 
+[athenrymichael@gmail.com]
 
 ## Version History
 
