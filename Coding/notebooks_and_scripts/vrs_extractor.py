@@ -22,10 +22,15 @@ from projectaria_tools.core.calibration import (
     get_linear_camera_calibration,
 )
 import cv2
+import moviepy.editor as mpy
+from moviepy.editor import VideoFileClip, ImageSequenceClip
+from projectaria_tools.core.mps.utils import filter_points_from_confidence
+
 
 import sys
 sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/notebooks_and_scripts')
 from OtherModelScripts import ego_blur 
+
 
 
 class VRSDataExtractor():
@@ -62,7 +67,6 @@ class VRSDataExtractor():
             else f"cuda:{torch.cuda.current_device()}"
         )
     
-
     def get_image_data(self, start_index = 0, end_index = None):
 
         '''
@@ -99,7 +103,7 @@ class VRSDataExtractor():
 
         for index in range(start_index, end_index):
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)
-            img = Image.fromarray(image_data[0].to_numpy_array()).rotate(-90)
+            img = np.array(Image.fromarray(image_data[0].to_numpy_array()).rotate(-90))
             rgb_images[rgb_ts[index]] = img
 
         self.result['rgb'] = rgb_images
@@ -108,7 +112,7 @@ class VRSDataExtractor():
 
         for index in range(start_index, end_index):
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)
-            img = Image.fromarray(image_data[0].to_numpy_array())
+            img = np.array(Image.fromarray(image_data[0].to_numpy_array()))
             et_images[et_ts[index]] = img
              
         self.result['et'] = et_images
@@ -118,8 +122,8 @@ class VRSDataExtractor():
             for index in range(start_index, end_index):
                 left_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-left'], index)
                 right_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-right'], index)
-                left_img = Image.fromarray(left_image_data[0].to_numpy_array())
-                right_img = Image.fromarray(right_image_data[0].to_numpy_array())
+                left_img = np.array(Image.fromarray(left_image_data[0].to_numpy_array()))
+                right_img = np.array(Image.fromarray(right_image_data[0].to_numpy_array()))
                 slam_left_images[slam_left_ts[index]] = left_img
                 slam_right_images[slam_right_ts[index]] = right_img
 
@@ -131,6 +135,14 @@ class VRSDataExtractor():
         except:
             print("Error extracting slam images, likely not present in VRS file ")
     
+    def preprocessing(self, image_data):
+            
+        '''
+        Preprocess the extracted images from the VRS file
+        '''
+
+        rgb_images = self.result['rgb']
+        pass
 
     def get_gaze_hand(self, gaze_path, hand_path, start_index = 0, end_index = None):
 
@@ -220,14 +232,13 @@ class VRSDataExtractor():
         self.result['gaze'] = gaze_points
         print(f"Extracted {len(self.result['gaze'])} gaze points from gaze stream")
 
-
     def get_slam_data(self, slam_path, start_index = 0, end_index = None):
 
         open_loop_points = {}
         closed_loop_points = {}
 
-        open_loop_path = os.path.join(slam_path, "open_loop_trajectory.csv")
-        closed_loop_path = os.path.join(slam_path, "closed_loop_trajectory.csv")
+        open_loop_path = os.path.normpath(os.path.join(slam_path, "open_loop_trajectory.csv"))
+        closed_loop_path = os.path.normpath(os.path.join(slam_path, "closed_loop_trajectory.csv"))
 
         open_loop_traj = mps.read_open_loop_trajectory(open_loop_path)
         closed_loop_traj = mps.read_closed_loop_trajectory(closed_loop_path)
@@ -428,43 +439,81 @@ class VRSDataExtractor():
         # for img in rgb_images:
 
         undistorted_rgb_image = distort_by_calibration(
-                        samp, dst_calib, rgb_calib
+                        samp, dst_calib, rgb_calib,
+                        InterpolationMethod.BILINEAR
                     )
         
-        plt.imshow(np.array(undistorted_rgb_image))
+        plt.imshow(undistorted_rgb_image)
         plt.show()
-
         
+        #interpolation from InterpolationMethod
+
+    def video_from_frames(self,rgb_frames,output_path,fps = 15):
+            
+        '''
+        Create a video from the extracted frames and turn into moviepy VideoClip
+        '''
+        clip = ImageSequenceClip(rgb_frames, fps=fps)
+        clip.write_videofile(f"{output_path}", codec="libx265")
 
 
-        
+        return clip
+
+    def point_cloud_loading_and_filtering(self, base_path):
+        '''
+        Load the point cloud data from the VRS file
+        '''
+
+        global_points_path = base_path + '/slam_data/global_point_cloud.csv.gz'
+
+        points = mps.read_global_point_cloud(global_points_path)
+
+        # filter the point cloud using thresholds on the inverse depth and distance standard deviation
+        inverse_distance_std_threshold = 0.001
+        distance_std_threshold = 0.15
+
+        filtered_points = filter_points_from_confidence(points, inverse_distance_std_threshold, distance_std_threshold)
 
 
+
+        for point in filtered_points:
+            position_world = point.position_world
+            position_device = point.uid
+
+            break
+
+        # observations_path = "/path/to/mps/output/trajectory/semidense_observations.csv.gz"
+        # observations = mps.read_point_observations(observations_path)
+
+    
 if __name__ == "__main__":
-    VRS_DE = VRSDataExtractor('sampledata/sample3/Driving_Profile_Test.vrs')
+    
+    base_path = 'sampledata/mps_Lab_Test_vrs/Lab_Test.vrs'
+    file_name = base_path.split("/")[-1].split(".")[0]
+    gaze_path = "/".join(base_path.split("/")[:-1]) + '/eye_gaze/general_eye_gaze.csv'
+    hand_path = "/".join(base_path.split("/")[:-1]) + '/hand_tracking/wrist_and_palm_poses.csv'
+    slam_path = "/".join(base_path.split("/")[:-1]) + '/slam_data'
+    video_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_video.mp4'
+    blurred_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_blurred_video.,p4'
 
 
-    # VRS_DE.get_image_data()
+    VRS_DE = VRSDataExtractor(base_path)
 
-    # print(f' sample image entry {list(VRS_DE.result["rgb"].items())[0]}')
+    VRS_DE.get_image_data()
+    VRS_DE.get_IMU_data()
+    VRS_DE.get_gaze_hand(gaze_path, hand_path)
+    VRS_DE.get_slam_data(slam_path)
+    #VRS_DE.rgb_undistort('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg')
+    VRS_DE.video_from_frames(list(VRS_DE.result['rgb'].values()), video_path)
+    # VRS_DE.ego_blur(input_video_path = video_path, output_video_path = blurred_path)
 
-    # VRS_DE.get_IMU_data()
+    
 
     # print(f' sample imu-right entry {list(VRS_DE.result["imu_right"].items())[0][1]}')
     # print(f' sample imu-left entry {list(VRS_DE.result["imu_left"].items())[0][1]}')
-
-    # VRS_DE.get_gaze_hand('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/sample3/mps_Driving_Profile_Test_vrs/eye_gaze/general_eye_gaze.csv', 
-    #                'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/sample3/mps_Driving_Profile_Test_vrs/hand_tracking/wrist_and_palm_poses.csv',)
-    
     # print(f' sample gaze entry {list(VRS_DE.result["gaze"].items())[0]}')
     # print(f' sample handwrist entry {list(VRS_DE.result["handwrist"].items())[0]}')
-
     # print(f' sample open loop entry {list(VRS_DE.result["open_loop"].items())[0]}')
-
-    # VRS_DE.ego_blur(input_image_path = 'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg',
-    #                 output_image_path = 'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest_blurred.jpg')
-
-    # VRS_DE.rgb_undistort('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg')
 
 
 

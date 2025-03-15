@@ -8,13 +8,13 @@ import argparse
 import os
 from functools import lru_cache
 from typing import List
-
+import tqdm
 import cv2
 import numpy as np
 import torch
 import torchvision
-# from moviepy.editor import ImageSequenceClip
-# from moviepy.video.io.VideoFileClip import VideoFileClip
+from moviepy.editor import ImageSequenceClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
 
 
 def parse_args():
@@ -424,7 +424,7 @@ def visualize_video(
     """
     visualized_images = []
     video_reader_clip = VideoFileClip(input_video_path)
-    for frame in video_reader_clip.iter_frames():
+    for frame in tqdm.tqdm(video_reader_clip.iter_frames()):
         if len(frame.shape) == 2:
             frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
         image = frame.copy()

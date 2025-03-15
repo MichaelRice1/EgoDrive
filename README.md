@@ -31,7 +31,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/github_username/repo_name">
-    <img src="images/logo.png" alt="Logo" width="80" height="80">
+    <img src="MSc_AI_Thesis/images/aria.jpeg" alt="Logo" width="120" height="80">
   </a>
 
 <h3 align="center">Michael's Master Thesis</h3>
@@ -93,14 +93,12 @@ Here's a blank template to get started. To avoid retyping too much info, do a se
 
 ### Built With
 
-* [![Next][Next.js]][Next-url]
-* [![React][React.js]][React-url]
-* [![Vue][Vue.js]][Vue-url]
-* [![Angular][Angular.io]][Angular-url]
-* [![Svelte][Svelte.dev]][Svelte-url]
-* [![Laravel][Laravel.com]][Laravel-url]
-* [![Bootstrap][Bootstrap.com]][Bootstrap-url]
-* [![JQuery][JQuery.com]][JQuery-url]
+* [![ProjectAria][Project Aria]][ProjectAria-url]
+* [![Meta Research][Meta Research]][MetaResearch-url]
+* [![Python][Python]][Python-url]
+* [![Jupyter][Jupyter]][Jupyter-url]
+* [![OpenCV][OpenCV]][OpenCV-url]
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -206,9 +204,8 @@ Distributed under the project_license. See `LICENSE.txt` for more information.
 <!-- CONTACT -->
 ## Contact
 
-Your Name - [@twitter_handle](https://twitter.com/twitter_handle) - email@email_client.com
+Michael Rice - [@email](athenrymichael@gmail.com)
 
-Project Link: [https://github.com/github_username/repo_name](https://github.com/github_username/repo_name)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -217,8 +214,8 @@ Project Link: [https://github.com/github_username/repo_name](https://github.com/
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* []()
-* []()
+* [](Waqar Shahid Qureshi, Thesis Supervisor)
+* [](Project Aria Team)
 * []()
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
