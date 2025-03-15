@@ -4,9 +4,8 @@ Simple overview of use/purpose.
 
 ## Description
 
-Project Aria 
-
-![Alt text](images/aria.jpeg?raw=true "Project Aria")
+![aria](https://github.com/user-attachments/assets/6a358fe5-a7f1-4349-8a58-ccfa925729a9)![meta](https://github.com/user-attachments/assets/296e3e00-c084-421b-84a3-7cbe8ca7f432)
+![uoglogo](https://github.com/user-attachments/assets/8f5672bf-7b1a-4970-afc1-b04b35d10a04)
 
 
 
