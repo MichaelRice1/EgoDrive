@@ -1,30 +1,32 @@
-import sys
 import os
-from projectaria_tools.core import data_provider, calibration
-from projectaria_tools.core.image import InterpolationMethod
-from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
-from projectaria_tools.core.stream_id import RecordableTypeId, StreamId
 import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
+import torch
+import cv2
+from moviepy.editor import ImageSequenceClip
+import csv
+from time import time
+import pandas as pd
+import tqdm
+import io
+from projectaria_tools.core import data_provider
+from projectaria_tools.core.image import InterpolationMethod
+from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
+from projectaria_tools.core.stream_id import StreamId
 import projectaria_tools.core.mps as mps
-from projectaria_tools.core.mps.utils import get_nearest_wrist_and_palm_pose
 from projectaria_tools.core.mps.utils import (
+    get_nearest_wrist_and_palm_pose,
     get_gaze_vector_reprojection,
     get_nearest_eye_gaze,
-    get_nearest_pose
+    get_nearest_pose,
+    filter_points_from_confidence
 )
-import argparse
-import torch
 from projectaria_tools.core.calibration import (
     device_calibration_from_json_string,
     distort_by_calibration,
     get_linear_camera_calibration,
 )
-import cv2
-import moviepy.editor as mpy
-from moviepy.editor import VideoFileClip, ImageSequenceClip
-from projectaria_tools.core.mps.utils import filter_points_from_confidence
 
 
 import sys
@@ -56,6 +58,8 @@ class VRSDataExtractor():
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
         self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         self.result = {}
+        self.face_ego_blur = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_face/ego_blur_face.jit"
+        self.lp_ego_blur = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_lp/ego_blur_lp.jit"
 
     def get_device(self) -> str:
         """
@@ -349,7 +353,6 @@ class VRSDataExtractor():
         print(f"Extracted {len(self.result['imu_right'])} data points from {imu_right_label} stream")
         print(f"Extracted {len(self.result['imu_left'])} data points from {imu_left_label} stream")
 
-    def save_data(self, results, output_path):
 
         '''
         Save the extracted data to the output path
@@ -357,25 +360,20 @@ class VRSDataExtractor():
 
         pass
 
-    def ego_blur( self,
-                egoblur_face_path: str = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_face/ego_blur_face.jit",
-                egoblur_lp_path: str = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_lp/ego_blur_lp.jit",
-                input_image_path: str | None = None,
-                output_image_path: str | None = None,
-                input_video_path: str | None = None,
-                output_video_path: str | None = None,
-            ) -> None:
+    def ego_blur( self, input_labels):
 
         '''
         Apply ego-blur to the extracted images from the VRS file to make data anonymous
         '''
+
+        egoblur_face_path = self.face_ego_blur
+        egoblur_lp_path = self.lp_ego_blur
 
 
         face_model_score_threshold = 0.9
         lp_model_score_threshold = 0.9
         nms_iou_threshold = 0.3
         scale_factor_detections = 1.0
-        output_video_fps = 15
 
 
         face_detector = torch.jit.load(egoblur_face_path, map_location="cpu").to(
@@ -388,32 +386,41 @@ class VRSDataExtractor():
         )
         lp_detector.eval()
 
-        if input_image_path is not None and output_image_path is not None:
+        data = pd.read_csv(input_labels)
+        indices = data['timestep']
+        labels = data['label']
+        timestamps = list(self.result['rgb'].keys())
+        filtered_ts = [timestamps[index] for index in indices]
+        
+        frames = [self.result['rgb'][fts] for fts in filtered_ts]
+
+        print(f' Number of frames {len(frames)}')
+
+
+        for i,frame in tqdm.tqdm(enumerate(frames)):
+
+            label = labels[i]
+            bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            image = bgr_frame.copy()
+
+            image_tensor = ego_blur.get_image_tensor(image)
+            image_tensor_copy = image_tensor.clone()
 
             output_image = ego_blur.visualize_image(
-                input_image_path,
+                image,
+                image_tensor,
+                image_tensor_copy,
                 face_detector,
                 lp_detector,
                 face_model_score_threshold,
                 lp_model_score_threshold,
                 nms_iou_threshold,
-                output_image_path,
                 scale_factor_detections,
+                label
             )
 
-        if input_video_path is not None and output_video_path is not None:
-        
-            ego_blur.visualize_video(
-                input_video_path,
-                face_detector,
-                lp_detector,
-                face_model_score_threshold,
-                lp_model_score_threshold,
-                nms_iou_threshold,
-                output_video_path,
-                scale_factor_detections,
-                output_video_fps,
-            )
+            rgb = cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB)
+            self.result['rgb'][filtered_ts[i]] = rgb
 
     #TODO - unsure if will work
     def rgb_undistort(self, path):
@@ -485,7 +492,114 @@ class VRSDataExtractor():
         # observations_path = "/path/to/mps/output/trajectory/semidense_observations.csv.gz"
         # observations = mps.read_point_observations(observations_path)
 
-    
+    def label_face_lps(self, frames_dict, output_csv):
+
+        '''
+        function to label the rgb frames if they have faces or license plates to save blurring time
+        '''
+
+        LEFT_KEY = 81 if os.name == 'posix' else 2424832
+        RIGHT_KEY = 83 if os.name == 'posix' else 2555904
+        ESC_KEY = 27
+
+        # Initialize CSV and state
+        csv_exists = os.path.exists(output_csv)
+        with open(output_csv, 'a' if csv_exists else 'w', newline='') as f:
+            writer = csv.writer(f)
+            if not csv_exists:
+                writer.writerow(['timestep', 'label'])
+
+        sorted_ts = sorted(frames_dict.keys())
+        if not sorted_ts:
+            print("No frames to label!")
+            return
+
+        current_idx = 0
+        is_playing = False
+        label_face = False
+        label_lp = False
+        last_frame_time = time()
+        window_name = "Frame Labeler"
+
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+        while True:
+            ts = sorted_ts[current_idx]
+            frame = frames_dict[ts].copy()
+
+            # Add status overlay
+            status = []
+            if label_face: status.append("FACE")
+            if label_lp: status.append("LICENSE")
+            cv2.putText(frame, f"TOGGLES: {', '.join(status) or 'None'}", 
+                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)}", 
+                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
+            cv2.imshow(window_name, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            key = cv2.waitKeyEx(1)
+
+            # Handle exit
+            if key in (ESC_KEY, ord('q'), ord('Q')):
+                break
+
+            # Toggle labels
+            if key in (ord('f'), ord('F')):
+                label_face = not label_face
+            if key in (ord('l'), ord('L')):
+                label_lp = not label_lp
+
+            # Navigation controls
+            if key == LEFT_KEY:
+                current_idx = max(0, current_idx - 1)
+                is_playing = False
+            elif key == RIGHT_KEY:
+                self._handle_frame_advance(sorted_ts, current_idx, 1, output_csv, label_face, label_lp)
+                current_idx = min(len(sorted_ts)-1, current_idx + 1)
+                is_playing = False
+            elif key == 32:  # Space
+                is_playing = not is_playing
+
+            # Auto-advance with labeling
+            if is_playing and time() - last_frame_time >= 1/15:
+                new_idx = current_idx + 1
+                if new_idx < len(sorted_ts):
+                    self._handle_frame_advance(sorted_ts, current_idx, new_idx-current_idx, 
+                                            output_csv, label_face, label_lp)
+                    current_idx = new_idx
+                    last_frame_time = time()
+                else:
+                    is_playing = False
+
+        cv2.destroyAllWindows()
+
+    def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
+        """Records labels for all frames passed during advance"""
+        labels = []
+        if label_face: labels.append('face')
+        if label_lp: labels.append('license_plate')
+        
+        if labels:
+            with open(output_csv, 'a', newline='') as f:
+                writer = csv.writer(f)
+                for i in range(1, count+1):
+                    ts = sorted_ts[start_idx + i]
+                    for label in labels:
+                        writer.writerow([start_idx + i, label])
+
+    def save_data(self,output_path):
+        '''
+        Save the extracted data to the output path
+        '''
+
+        # np.save(output_path, self.result)
+
+
+        pass
+
+
+
+
 if __name__ == "__main__":
     
     base_path = 'sampledata/mps_Lab_Test_vrs/Lab_Test.vrs'
@@ -494,18 +608,27 @@ if __name__ == "__main__":
     hand_path = "/".join(base_path.split("/")[:-1]) + '/hand_tracking/wrist_and_palm_poses.csv'
     slam_path = "/".join(base_path.split("/")[:-1]) + '/slam_data'
     video_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_video.mp4'
-    blurred_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_blurred_video.,p4'
+    # ego_blur_labels_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_labels.csv'
+
+    ego_blur_labels_path = 'sampledata/imagetesting/Lab_test_labels.csv'
+    output_path = 'sampledata/imagetesting/Lab_Test_data.npy'
+
+
 
 
     VRS_DE = VRSDataExtractor(base_path)
 
     VRS_DE.get_image_data()
-    VRS_DE.get_IMU_data()
-    VRS_DE.get_gaze_hand(gaze_path, hand_path)
-    VRS_DE.get_slam_data(slam_path)
+
+    # VRS_DE.label_face_lps(VRS_DE.result['rgb'], 'sampledata/imagetesting/Lab_test_labels.csv')
+
+    VRS_DE.ego_blur(ego_blur_labels_path)
+    # VRS_DE.save_data(output_path)
+    # VRS_DE.get_IMU_data()
+    # VRS_DE.get_gaze_hand(gaze_path, hand_path)
+    # VRS_DE.get_slam_data(slam_path)
     #VRS_DE.rgb_undistort('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg')
-    VRS_DE.video_from_frames(list(VRS_DE.result['rgb'].values()), video_path)
-    # VRS_DE.ego_blur(input_video_path = video_path, output_video_path = blurred_path)
+    # VRS_DE.video_from_frames(list(VRS_DE.result['rgb'].values()), video_path)
 
     
 

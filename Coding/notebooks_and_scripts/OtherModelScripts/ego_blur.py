@@ -342,14 +342,16 @@ def visualize(
 
 
 def visualize_image(
-    input_image_path: str,
+    bgr_image_copy: np.ndarray,
+    image_tensor: torch.Tensor,
+    image_tensor_copy: torch.Tensor,
     face_detector: torch.jit._script.RecursiveScriptModule,
     lp_detector: torch.jit._script.RecursiveScriptModule,
     face_model_score_threshold: float,
     lp_model_score_threshold: float,
     nms_iou_threshold: float,
-    output_image_path: str,
     scale_factor_detections: float,
+    label: str = None,
 ):
     """
     parameter input_image_path: absolute path to the input image
@@ -363,39 +365,45 @@ def visualize_image(
 
     Perform detections on the input image and save the output image at the given path.
     """
-    bgr_image = read_image(input_image_path)
-    image = bgr_image.copy()
+    # bgr_image = read_image(input_image_path)
+    # image = bgr_image.copy()
 
-    image_tensor = get_image_tensor(bgr_image)
-    image_tensor_copy = image_tensor.clone()
+    # image_tensor = get_image_tensor(bgr_image)
+    # image_tensor_copy = image_tensor.clone()
     detections = []
     # get face detections
-    if face_detector is not None:
-        detections.extend(
-            get_detections(
-                face_detector,
-                image_tensor,
-                face_model_score_threshold,
-                nms_iou_threshold,
+    if 'face' in label:
+        if face_detector is not None:
+            detections.extend(
+                get_detections(
+                    face_detector,
+                    image_tensor,
+                    face_model_score_threshold,
+                    nms_iou_threshold,
+                )
             )
-        )
 
-    # get license plate detections
-    if lp_detector is not None:
-        detections.extend(
-            get_detections(
-                lp_detector,
-                image_tensor_copy,
-                lp_model_score_threshold,
-                nms_iou_threshold,
+    if 'license' in label:
+        print('license')
+        if lp_detector is not None:
+            detections.extend(
+                get_detections(
+                    lp_detector,
+                    image_tensor_copy,
+                    lp_model_score_threshold,
+                    nms_iou_threshold,
+                )
             )
-        )
+
+
     image = visualize(
-        image,
+        bgr_image_copy,
         detections,
         scale_factor_detections,
     )
-    write_image(image, output_image_path)
+
+    return image
+    # write_image(image, output_image_path)
 
 
 def visualize_video(
