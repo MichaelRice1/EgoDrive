@@ -9,7 +9,11 @@ import csv
 from time import time
 import pandas as pd
 import tqdm
-import io
+import mediapipe as mp
+from mediapipe import solutions
+from mediapipe.framework.formats import landmark_pb2
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 from projectaria_tools.core import data_provider
 from projectaria_tools.core.image import InterpolationMethod
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
@@ -60,6 +64,7 @@ class VRSDataExtractor():
         self.result = {}
         self.face_ego_blur = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_face/ego_blur_face.jit"
         self.lp_ego_blur = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_lp/ego_blur_lp.jit"
+        self.mp_hand_landmarker_task_path = 'C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/other/hand_landmarker.task'
 
     def get_device(self) -> str:
         """
@@ -422,6 +427,71 @@ class VRSDataExtractor():
             rgb = cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB)
             self.result['rgb'][filtered_ts[i]] = rgb
 
+    def create_ht_detector(self):
+        base_options = python.BaseOptions(model_asset_path=self.mp_hand_landmarker_task_path)
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.IMAGE,
+            num_hands=2,
+            min_hand_detection_confidence=0.5,
+            min_hand_presence_confidence=0.5,
+        )
+        detector = vision.HandLandmarker.create_from_options(options)
+
+        return detector
+    
+    def gray_to_rgb(self,img: np.ndarray) -> np.ndarray:
+        """
+        mediapipe input has to be 3 channel RGB image, so we convert the grayscale
+        image to RGB image
+        """
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        return img
+
+    def mp_det(self, detector, img: np.ndarray):
+        # convert grayscale to RGB by replicating channel 3 times
+        if img.ndim == 2:
+            img = self.gray_to_rgb(img)
+
+        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=img)
+        detection_result = detector.detect(mp_img)
+
+        return detection_result
+
+    def mediapipe_detection(self):
+        
+        detection_results = {}
+        hand_data = self.result['handwrist']
+
+        original_ts = list(self.result['rgb'].keys())
+
+        #converting between hand timestamps and rgb timestamps
+        left_pose_confidence = [hand_data[ts]['left_pose_confidence'] for ts in hand_data]
+        right_pose_confidence = [hand_data[ts]['right_pose_confidence'] for ts in hand_data]
+        timestamps = list(hand_data.keys())
+        frames = list(self.result['rgb'].values())
+
+        non_zero_frames = [(timestamps[i],frames[i]) for i in range(len(timestamps)) if left_pose_confidence[i] > 0.5 or right_pose_confidence[i] > 0.5]
+
+        
+        print(f' Number of non zero frames {len(non_zero_frames)}')
+
+        for ts in original_ts:
+
+            if ts not in [x[0] for x in non_zero_frames]:
+                detection_results[ts] = None
+                continue
+            else:
+                detector = self.create_ht_detector()
+                det_res = self.mp_det(detector, self.result['rgb'][ts])
+                detection_results[ts] = det_res
+        
+        
+        self.result['mediapipe_detection'] = detection_results
+        print(f"Extracted {len(self.result['mediapipe_detection'])} mediapipe detection results")
+
+
+
     #TODO - unsure if will work
     def rgb_undistort(self, path):
 
@@ -466,6 +536,7 @@ class VRSDataExtractor():
 
         return clip
 
+    #TODO
     def point_cloud_loading_and_filtering(self, base_path):
         '''
         Load the point cloud data from the VRS file
@@ -587,6 +658,7 @@ class VRSDataExtractor():
                     for label in labels:
                         writer.writerow([start_idx + i, label])
 
+
     def save_data(self,output_path):
         '''
         Save the extracted data to the output path
@@ -596,7 +668,61 @@ class VRSDataExtractor():
 
 
         pass
+    
 
+    def draw_landmarks_on_image(self,rgb_image, detection_result):
+        MARGIN = 10  # pixels
+        FONT_SIZE = 1
+        FONT_THICKNESS = 1
+        HANDEDNESS_TEXT_COLOR = (88, 205, 54)  # vibrant green
+
+        hand_landmarks_list = detection_result.hand_landmarks
+        handedness_list = detection_result.handedness
+        annotated_image = np.copy(rgb_image)
+
+        # Loop through the detected hands to visualize.
+        for idx in range(len(hand_landmarks_list)):
+            hand_landmarks = hand_landmarks_list[idx]
+            handedness = handedness_list[idx]
+
+            # Draw the hand landmarks.
+            hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+            hand_landmarks_proto.landmark.extend(
+                [
+                    landmark_pb2.NormalizedLandmark(
+                        x=landmark.x, y=landmark.y, z=landmark.z
+                    )
+                    for landmark in hand_landmarks
+                ]
+            )
+            solutions.drawing_utils.draw_landmarks(
+                annotated_image,
+                hand_landmarks_proto,
+                solutions.hands.HAND_CONNECTIONS,
+                solutions.drawing_styles.get_default_hand_landmarks_style(),
+                solutions.drawing_styles.get_default_hand_connections_style(),
+            )
+
+            # Get the top left corner of the detected hand's bounding box.
+            height, width, _ = annotated_image.shape
+            x_coordinates = [landmark.x for landmark in hand_landmarks]
+            y_coordinates = [landmark.y for landmark in hand_landmarks]
+            text_x = int(min(x_coordinates) * width)
+            text_y = int(min(y_coordinates) * height) - MARGIN
+
+            # Draw handedness (left or right hand) on the image.
+            cv2.putText(
+                annotated_image,
+                f"{handedness[0].category_name}",
+                (text_x, text_y),
+                cv2.FONT_HERSHEY_DUPLEX,
+                FONT_SIZE,
+                HANDEDNESS_TEXT_COLOR,
+                FONT_THICKNESS,
+                cv2.LINE_AA,
+            )
+
+        return annotated_image
 
 
 
@@ -621,11 +747,28 @@ if __name__ == "__main__":
     VRS_DE.get_image_data()
 
     # VRS_DE.label_face_lps(VRS_DE.result['rgb'], 'sampledata/imagetesting/Lab_test_labels.csv')
+    VRS_DE.get_gaze_hand(gaze_path, hand_path)
 
-    VRS_DE.ego_blur(ego_blur_labels_path)
+    VRS_DE.mediapipe_detection()
+
+
+    first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
+    det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
+    index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
+    img = list(VRS_DE.result['rgb'].values())[index]
+
+    img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
+    plt.figure(figsize=(10, 10))
+    plt.imshow(img_w_landmarks)
+    plt.axis("off")
+    plt.show()
+
+    
+
+
+    # VRS_DE.ego_blur(ego_blur_labels_path)
     # VRS_DE.save_data(output_path)
     # VRS_DE.get_IMU_data()
-    # VRS_DE.get_gaze_hand(gaze_path, hand_path)
     # VRS_DE.get_slam_data(slam_path)
     #VRS_DE.rgb_undistort('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg')
     # VRS_DE.video_from_frames(list(VRS_DE.result['rgb'].values()), video_path)
