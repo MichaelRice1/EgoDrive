@@ -491,7 +491,6 @@ class VRSDataExtractor():
         print(f"Extracted {len(self.result['mediapipe_detection'])} mediapipe detection results")
 
 
-
     #TODO - unsure if will work
     def rgb_undistort(self, path):
 
@@ -747,21 +746,26 @@ if __name__ == "__main__":
     VRS_DE.get_image_data()
 
     # VRS_DE.label_face_lps(VRS_DE.result['rgb'], 'sampledata/imagetesting/Lab_test_labels.csv')
-    VRS_DE.get_gaze_hand(gaze_path, hand_path)
-
-    VRS_DE.mediapipe_detection()
+    # VRS_DE.get_gaze_hand(gaze_path, hand_path)
 
 
-    first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
-    det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
-    index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
-    img = list(VRS_DE.result['rgb'].values())[index]
 
-    img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
-    plt.figure(figsize=(10, 10))
-    plt.imshow(img_w_landmarks)
-    plt.axis("off")
-    plt.show()
+
+
+    #mediapipe detection
+    # VRS_DE.mediapipe_detection()
+
+
+    # first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
+    # det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
+    # index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
+    # img = list(VRS_DE.result['rgb'].values())[index]
+
+    # img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
+    # plt.figure(figsize=(10, 10))
+    # plt.imshow(img_w_landmarks)
+    # plt.axis("off")
+    # plt.show()
 
     
 
