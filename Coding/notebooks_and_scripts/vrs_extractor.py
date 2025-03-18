@@ -9,6 +9,7 @@ import csv
 from time import time
 import pandas as pd
 import tqdm
+import io
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
@@ -115,6 +116,21 @@ class VRSDataExtractor():
             img = np.array(Image.fromarray(image_data[0].to_numpy_array()).rotate(-90))
             rgb_images[rgb_ts[index]] = img
 
+            # print(f' original bytes {img.nbytes}' )
+            # image = Image.fromarray(img)
+            # # Save the image to disk
+            # image.save('sampledata/imagetesting/pngfull.png', format='PNG', compress_level=0)
+
+            # pimg = Image.fromarray(img)
+            # buffer = io.BytesIO()
+            # pimg.save(buffer, format="PNG")
+            # png_bytes = buffer.getvalue()
+            # print(f'rgb storage size {sys.getsizeof(png_bytes)}')
+            # resized_img = pimg.resize((512, 512))
+            # resized_img.save('sampledata/imagetesting/pngresized.png', format='PNG', compress_level=9)
+
+            # break
+
         self.result['rgb'] = rgb_images
         print(f"Extracted {len(self.result['rgb'])} images from {rgblabel} stream")
 
@@ -122,7 +138,11 @@ class VRSDataExtractor():
         for index in range(start_index, end_index):
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)
             img = np.array(Image.fromarray(image_data[0].to_numpy_array()))
-            et_images[et_ts[index]] = img
+            # print(f'et storage size {sys.getsizeof(img.nbytes)}')
+            # et_img = Image.fromarray(img)
+            # et_img.save('sampledata/imagetesting/et.png', format='PNG', compress_level=0)
+            # et_images[et_ts[index]] = img
+            # break
              
         self.result['et'] = et_images
         print(f"Extracted {len(self.result['et'])} images from {etlabel} stream")
@@ -133,8 +153,12 @@ class VRSDataExtractor():
                 right_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-right'], index)
                 left_img = np.array(Image.fromarray(left_image_data[0].to_numpy_array()))
                 right_img = np.array(Image.fromarray(right_image_data[0].to_numpy_array()))
+                # print(f'slam storage size {sys.getsizeof(left_img.nbytes)}')
+                # slam_img = Image.fromarray(left_img)
+                # slam_img.save('sampledata/imagetesting/slam_left.png', format='PNG', compress_level=0)
                 slam_left_images[slam_left_ts[index]] = left_img
                 slam_right_images[slam_right_ts[index]] = right_img
+                # break
 
             self.result['slam_left'] = slam_left_images
             self.result['slam_right'] = slam_right_images
@@ -490,7 +514,6 @@ class VRSDataExtractor():
         self.result['mediapipe_detection'] = detection_results
         print(f"Extracted {len(self.result['mediapipe_detection'])} mediapipe detection results")
 
-
     #TODO - unsure if will work
     def rgb_undistort(self, path):
 
@@ -749,23 +772,18 @@ if __name__ == "__main__":
     # VRS_DE.get_gaze_hand(gaze_path, hand_path)
 
 
-
-
-
     #mediapipe detection
-    # VRS_DE.mediapipe_detection()
+    VRS_DE.mediapipe_detection()
+    first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
+    det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
+    index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
+    img = list(VRS_DE.result['rgb'].values())[index]
 
-
-    # first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
-    # det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
-    # index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
-    # img = list(VRS_DE.result['rgb'].values())[index]
-
-    # img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
-    # plt.figure(figsize=(10, 10))
-    # plt.imshow(img_w_landmarks)
-    # plt.axis("off")
-    # plt.show()
+    img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
+    plt.figure(figsize=(10, 10))
+    plt.imshow(img_w_landmarks)
+    plt.axis("off")
+    plt.savefig('sampledata/imagetesting/mediapipe_detection.png')
 
     
 
