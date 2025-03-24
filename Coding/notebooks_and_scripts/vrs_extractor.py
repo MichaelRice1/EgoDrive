@@ -9,7 +9,6 @@ import csv
 from time import time
 import pandas as pd
 import tqdm
-import io
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
@@ -77,7 +76,7 @@ class VRSDataExtractor():
             else f"cuda:{torch.cuda.current_device()}"
         )
     
-    def get_image_data(self, start_index = 0, end_index = None):
+    def get_image_data(self, start_index=0, end_index=None):
 
         '''
         Extracts frames from the VRS file based on the index/time domain. The frames are extracted from the following streams:
@@ -168,7 +167,7 @@ class VRSDataExtractor():
         except:
             print("Error extracting slam images, likely not present in VRS file ")
     
-    def preprocessing(self, image_data):
+    def preprocessing(self, image_data:list):
             
         '''
         Preprocess the extracted images from the VRS file
@@ -177,7 +176,7 @@ class VRSDataExtractor():
         rgb_images = self.result['rgb']
         pass
 
-    def get_gaze_hand(self, gaze_path, hand_path, start_index = 0, end_index = None):
+    def get_gaze_hand(self, gaze_path:str, hand_path:str, start_index=0, end_index=None):
 
         '''
         Extracts eyegaze points from the VRS file based on the index/time domain. The eyegaze points are extracted from the following streams:
@@ -265,7 +264,7 @@ class VRSDataExtractor():
         self.result['gaze'] = gaze_points
         print(f"Extracted {len(self.result['gaze'])} gaze points from gaze stream")
 
-    def get_slam_data(self, slam_path, start_index = 0, end_index = None):
+    def get_slam_data(self, slam_path:str, start_index=0, end_index=None):
 
         open_loop_points = {}
         closed_loop_points = {}
@@ -344,7 +343,7 @@ class VRSDataExtractor():
         print(f"Extracted {len(self.result['closed_loop'])} closed loop points from closed loop stream")
 
     #TODO - stop this from loading objects
-    def get_IMU_data(self, start_index = 0, end_index = None):
+    def get_IMU_data(self, start_index=0, end_index=None):
 
         '''
         Extracts all IMU data from the VRS file
@@ -389,7 +388,7 @@ class VRSDataExtractor():
 
         pass
 
-    def ego_blur( self, input_labels):
+    def ego_blur( self, input_labels:str):
 
         '''
         Apply ego-blur to the extracted images from the VRS file to make data anonymous
@@ -472,7 +471,7 @@ class VRSDataExtractor():
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         return img
 
-    def mp_det(self, detector, img: np.ndarray):
+    def mp_det(self, detector, img:np.ndarray):
         # convert grayscale to RGB by replicating channel 3 times
         if img.ndim == 2:
             img = self.gray_to_rgb(img)
@@ -515,7 +514,7 @@ class VRSDataExtractor():
         print(f"Extracted {len(self.result['mediapipe_detection'])} mediapipe detection results")
 
     #TODO - unsure if will work
-    def rgb_undistort(self, path):
+    def rgb_undistort(self, path:str):
 
         '''
         Undistort the extracted images from the VRS file
@@ -547,7 +546,7 @@ class VRSDataExtractor():
         
         #interpolation from InterpolationMethod
 
-    def video_from_frames(self,rgb_frames,output_path,fps = 15):
+    def video_from_frames(self,rgb_frames:list,output_path:str,fps=15):
             
         '''
         Create a video from the extracted frames and turn into moviepy VideoClip
@@ -559,7 +558,7 @@ class VRSDataExtractor():
         return clip
 
     #TODO
-    def point_cloud_loading_and_filtering(self, base_path):
+    def point_cloud_loading_and_filtering(self, base_path:str):
         '''
         Load the point cloud data from the VRS file
         '''
@@ -681,7 +680,7 @@ class VRSDataExtractor():
                         writer.writerow([start_idx + i, label])
 
 
-    def save_data(self,output_path):
+    def save_data(self,output_path:str):
         '''
         Save the extracted data to the output path
         '''
