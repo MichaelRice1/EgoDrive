@@ -584,13 +584,11 @@ class VRSDataExtractor():
         # observations_path = "/path/to/mps/output/trajectory/semidense_observations.csv.gz"
         # observations = mps.read_point_observations(observations_path)
 
-    def annotate(self, frames_dict, labels_csv, actions_csv):
+    def annotate(self, frames_dict, labels_csv, actions_csv, fps=15):
         '''
-        Label RGB frames with face/license plate regions and driving actions,
-        supporting multiple simultaneous actions and non-overlapping exit keys.
+        Label RGB frames with face/license plate regions and driving actions.
+        Spacebar plays/pauses video playback at specified FPS (default: 30).
         '''
-
-
         action_label_map = {
             '0': 'change gear',
             '1': 'turn steering wheel (two hands)',
@@ -621,7 +619,8 @@ class VRSDataExtractor():
         LEFT_KEY = 81 if os.name == 'posix' else 2424832
         RIGHT_KEY = 83 if os.name == 'posix' else 2555904
         ESC_KEY = 27
-        EXIT_KEY = ord('x')
+        EXIT_KEY = ord('x')  # Non-conflicting exit key
+        FRAME_INTERVAL = 1.0 / fps
 
         # Initialize CSVs
         for csv_file, headers in [(labels_csv, ['start_frame', 'end_frame', 'type']), 
@@ -637,6 +636,7 @@ class VRSDataExtractor():
 
         current_idx = 0
         is_playing = False
+        last_frame_time = time()
 
         # State tracking
         active_blur_labels = {'face': None, 'license_plate': None}
@@ -655,31 +655,53 @@ class VRSDataExtractor():
 
         try:
             while True:
+                # Auto-advance playback
+                if is_playing:
+                    current_time = time()
+                    if current_time - last_frame_time >= FRAME_INTERVAL:
+                        new_idx = current_idx + 1
+                        if new_idx < len(sorted_ts):
+                            current_idx = new_idx
+                            last_frame_time = current_time
+                        else:
+                            is_playing = False  # Stop at end
+
                 ts = sorted_ts[current_idx]
                 frame = frames_dict[ts].copy()
 
                 # Display status
                 status = []
+                if is_playing: status.append(f"[PLAYING {fps}FPS]")
                 for label_type, start_frame in active_blur_labels.items():
-                    if start_frame is not None:
-                        status.append(f"{label_type.upper()}")
-                for action_key in active_actions:
-                    status.append(action_label_map[action_key])
+                    if start_frame is not None: status.append(f"{label_type.upper()}")
+                for action_key in active_actions: status.append(action_label_map[action_key])
                 
                 cv2.putText(frame, f"ACTIVE: {', '.join(status) or 'None'}", 
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)} (X to exit)", 
+                cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)} (X: exit, SPACE: play/pause)", 
                         (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
                 cv2.imshow(window_name, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 key = cv2.waitKeyEx(1)
 
-                # --- Key Handling Hierarchy ---
-                # 1. Exit first
-                if key in (ESC_KEY, EXIT_KEY):
+                # --- Key Handling ---
+                if key in (ESC_KEY, EXIT_KEY):  # Exit
                     break
 
-                # 2. Blur labels
+                # Navigation controls (override playback)
+                if key == LEFT_KEY:
+                    current_idx = max(0, current_idx - 1)
+                    is_playing = False
+                elif key == RIGHT_KEY:
+                    current_idx = min(len(sorted_ts)-1, current_idx + 1)
+                    is_playing = False
+
+                # Play/pause toggle
+                elif key == 32:  # Space
+                    is_playing = not is_playing
+                    last_frame_time = time()  # Reset timer for smooth playback
+
+                # Blur labels
                 elif key in (ord('f'), ord('F')):
                     label_type = 'face'
                     if active_blur_labels[label_type] is None:
@@ -696,15 +718,7 @@ class VRSDataExtractor():
                         write_blur_label(label_type, active_blur_labels[label_type], current_idx)
                         active_blur_labels[label_type] = None
 
-                # 3. Navigation
-                elif key == LEFT_KEY:
-                    current_idx = max(0, current_idx - 1)
-                elif key == RIGHT_KEY:
-                    current_idx = min(len(sorted_ts)-1, current_idx + 1)
-                elif key == 32:  # Space
-                    is_playing = not is_playing
-
-                # 4. Action keys
+                # Action keys
                 else:
                     try:
                         char_key = chr(key).lower()
@@ -716,7 +730,7 @@ class VRSDataExtractor():
                             else:
                                 active_actions[action_key] = current_idx
                     except ValueError:
-                        pass  
+                        pass
 
         finally:
             # Final writes on exit
@@ -726,6 +740,8 @@ class VRSDataExtractor():
             for action_key, start_frame in active_actions.items():
                 write_action(action_key, start_frame, current_idx)
             cv2.destroyAllWindows()
+
+
 
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
         """Records labels for all frames passed during advance"""
