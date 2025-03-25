@@ -741,8 +741,6 @@ class VRSDataExtractor():
                 write_action(action_key, start_frame, current_idx)
             cv2.destroyAllWindows()
 
-
-
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
         """Records labels for all frames passed during advance"""
         labels = []
