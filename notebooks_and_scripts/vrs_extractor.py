@@ -584,22 +584,51 @@ class VRSDataExtractor():
         # observations_path = "/path/to/mps/output/trajectory/semidense_observations.csv.gz"
         # observations = mps.read_point_observations(observations_path)
 
-    def label_face_lps(self, frames_dict, output_csv):
-
+    def annotate(self, frames_dict, labels_csv, actions_csv):
         '''
-        function to label the rgb frames if they have faces or license plates to save blurring time
+        Label RGB frames with face/license plate regions and driving actions,
+        supporting multiple simultaneous actions and non-overlapping exit keys.
         '''
 
+
+        action_label_map = {
+            '0': 'change gear',
+            '1': 'turn steering wheel (two hands)',
+            '2': 'turn steering wheel (one hand)',
+            '3': 'toggling indicator',
+            '4': 'checking left wing mirror',
+            '5': 'checking right wing mirror',
+            '6': 'checking rear view mirror',
+            '7': 'checking left blind spot',
+            '8': 'checking right blind spot',
+            '9': 'adjusting wipers',
+            'q': 'toggle headlights',
+            'w': 'toggle hazard lights',
+            'e': 'interacting with radio',
+            'r': 'interacting with air conditioning',
+            't': 'putting on seatbelt',
+            'y': 'releasing hand brake',
+            'u': 'deploying hand brake',
+            'i': 'using mobile phone',
+            'o': 'eating/drinking',
+            'p': 'looking in vanity mirror',
+            'a': 'checking speedometer / fuel gauge',
+            's': 'checking navigation system',
+            'd': 'idle'
+        }
+
+        # Key mappings (cross-platform)
         LEFT_KEY = 81 if os.name == 'posix' else 2424832
         RIGHT_KEY = 83 if os.name == 'posix' else 2555904
         ESC_KEY = 27
+        EXIT_KEY = ord('x')
 
-        # Initialize CSV and state
-        csv_exists = os.path.exists(output_csv)
-        with open(output_csv, 'a' if csv_exists else 'w', newline='') as f:
-            writer = csv.writer(f)
-            if not csv_exists:
-                writer.writerow(['timestep', 'label'])
+        # Initialize CSVs
+        for csv_file, headers in [(labels_csv, ['start_frame', 'end_frame', 'type']), 
+                                (actions_csv, ['start_frame', 'end_frame', 'action'])]:
+            if not os.path.exists(csv_file):
+                with open(csv_file, 'w', newline='') as f:
+                    csv.writer(f).writerow(headers)
 
         sorted_ts = sorted(frames_dict.keys())
         if not sorted_ts:
@@ -608,62 +637,95 @@ class VRSDataExtractor():
 
         current_idx = 0
         is_playing = False
-        label_face = False
-        label_lp = False
-        last_frame_time = time()
-        window_name = "Frame Labeler"
 
+        # State tracking
+        active_blur_labels = {'face': None, 'license_plate': None}
+        active_actions = {}
+
+        window_name = "Frame Labeler"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-        while True:
-            ts = sorted_ts[current_idx]
-            frame = frames_dict[ts].copy()
+        def write_blur_label(label_type, start_frame, end_frame):
+            with open(labels_csv, 'a', newline='') as f:
+                csv.writer(f).writerow([start_frame, end_frame, label_type])
 
-            # Add status overlay
-            status = []
-            if label_face: status.append("FACE")
-            if label_lp: status.append("LICENSE")
-            cv2.putText(frame, f"TOGGLES: {', '.join(status) or 'None'}", 
-                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)}", 
-                    (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
-            cv2.imshow(window_name, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            key = cv2.waitKeyEx(1)
+        def write_action(action_key, start_frame, end_frame):
+            with open(actions_csv, 'a', newline='') as f:
+                csv.writer(f).writerow([start_frame, end_frame, action_label_map[action_key]])
 
-            # Handle exit
-            if key in (ESC_KEY, ord('q'), ord('Q')):
-                break
+        try:
+            while True:
+                ts = sorted_ts[current_idx]
+                frame = frames_dict[ts].copy()
 
-            # Toggle labels
-            if key in (ord('f'), ord('F')):
-                label_face = not label_face
-            if key in (ord('l'), ord('L')):
-                label_lp = not label_lp
+                # Display status
+                status = []
+                for label_type, start_frame in active_blur_labels.items():
+                    if start_frame is not None:
+                        status.append(f"{label_type.upper()}")
+                for action_key in active_actions:
+                    status.append(action_label_map[action_key])
+                
+                cv2.putText(frame, f"ACTIVE: {', '.join(status) or 'None'}", 
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)} (X to exit)", 
+                        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                cv2.imshow(window_name, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                key = cv2.waitKeyEx(1)
 
-            # Navigation controls
-            if key == LEFT_KEY:
-                current_idx = max(0, current_idx - 1)
-                is_playing = False
-            elif key == RIGHT_KEY:
-                self._handle_frame_advance(sorted_ts, current_idx, 1, output_csv, label_face, label_lp)
-                current_idx = min(len(sorted_ts)-1, current_idx + 1)
-                is_playing = False
-            elif key == 32:  # Space
-                is_playing = not is_playing
+                # --- Key Handling Hierarchy ---
+                # 1. Exit first
+                if key in (ESC_KEY, EXIT_KEY):
+                    break
 
-            # Auto-advance with labeling
-            if is_playing and time() - last_frame_time >= 1/15:
-                new_idx = current_idx + 1
-                if new_idx < len(sorted_ts):
-                    self._handle_frame_advance(sorted_ts, current_idx, new_idx-current_idx, 
-                                            output_csv, label_face, label_lp)
-                    current_idx = new_idx
-                    last_frame_time = time()
+                # 2. Blur labels
+                elif key in (ord('f'), ord('F')):
+                    label_type = 'face'
+                    if active_blur_labels[label_type] is None:
+                        active_blur_labels[label_type] = current_idx
+                    else:
+                        write_blur_label(label_type, active_blur_labels[label_type], current_idx)
+                        active_blur_labels[label_type] = None
+                
+                elif key in (ord('l'), ord('L')):
+                    label_type = 'license_plate'
+                    if active_blur_labels[label_type] is None:
+                        active_blur_labels[label_type] = current_idx
+                    else:
+                        write_blur_label(label_type, active_blur_labels[label_type], current_idx)
+                        active_blur_labels[label_type] = None
+
+                # 3. Navigation
+                elif key == LEFT_KEY:
+                    current_idx = max(0, current_idx - 1)
+                elif key == RIGHT_KEY:
+                    current_idx = min(len(sorted_ts)-1, current_idx + 1)
+                elif key == 32:  # Space
+                    is_playing = not is_playing
+
+                # 4. Action keys
                 else:
-                    is_playing = False
+                    try:
+                        char_key = chr(key).lower()
+                        if char_key in action_label_map:
+                            action_key = char_key
+                            if action_key in active_actions:
+                                write_action(action_key, active_actions[action_key], current_idx)
+                                del active_actions[action_key]
+                            else:
+                                active_actions[action_key] = current_idx
+                    except ValueError:
+                        pass  
 
-        cv2.destroyAllWindows()
+        finally:
+            # Final writes on exit
+            for label_type, start_frame in active_blur_labels.items():
+                if start_frame is not None:
+                    write_blur_label(label_type, start_frame, current_idx)
+            for action_key, start_frame in active_actions.items():
+                write_action(action_key, start_frame, current_idx)
+            cv2.destroyAllWindows()
 
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
         """Records labels for all frames passed during advance"""
@@ -755,11 +817,9 @@ if __name__ == "__main__":
     hand_path = "/".join(base_path.split("/")[:-1]) + '/hand_tracking/wrist_and_palm_poses.csv'
     slam_path = "/".join(base_path.split("/")[:-1]) + '/slam_data'
     video_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_video.mp4'
-    # ego_blur_labels_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_labels.csv'
-
-    ego_blur_labels_path = 'sampledata/imagetesting/Lab_test_labels.csv'
+    ego_blur_labels_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_labels.csv'
+    actions_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_actions.csv'
     output_path = 'sampledata/imagetesting/Lab_Test_data.npy'
-
 
 
 
@@ -767,40 +827,24 @@ if __name__ == "__main__":
 
     VRS_DE.get_image_data()
 
-    # VRS_DE.label_face_lps(VRS_DE.result['rgb'], 'sampledata/imagetesting/Lab_test_labels.csv')
-    # VRS_DE.get_gaze_hand(gaze_path, hand_path)
+    VRS_DE.annotate(VRS_DE.result['rgb'], ego_blur_labels_path, actions_path)
 
 
     #mediapipe detection
-    VRS_DE.mediapipe_detection()
-    first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
-    det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
-    index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
-    img = list(VRS_DE.result['rgb'].values())[index]
+    # VRS_DE.mediapipe_detection()
+    # first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
+    # det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
+    # index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
+    # img = list(VRS_DE.result['rgb'].values())[index]
 
-    img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
-    plt.figure(figsize=(10, 10))
-    plt.imshow(img_w_landmarks)
-    plt.axis("off")
-    plt.savefig('sampledata/imagetesting/mediapipe_detection.png')
-
-    
-
-
-    # VRS_DE.ego_blur(ego_blur_labels_path)
-    # VRS_DE.save_data(output_path)
-    # VRS_DE.get_IMU_data()
-    # VRS_DE.get_slam_data(slam_path)
-    #VRS_DE.rgb_undistort('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/imagetesting/facetest.jpg')
-    # VRS_DE.video_from_frames(list(VRS_DE.result['rgb'].values()), video_path)
+    # img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
+    # plt.figure(figsize=(10, 10))
+    # plt.imshow(img_w_landmarks)
+    # plt.axis("off")
+    # plt.savefig('sampledata/imagetesting/mediapipe_detection.png')
 
     
 
-    # print(f' sample imu-right entry {list(VRS_DE.result["imu_right"].items())[0][1]}')
-    # print(f' sample imu-left entry {list(VRS_DE.result["imu_left"].items())[0][1]}')
-    # print(f' sample gaze entry {list(VRS_DE.result["gaze"].items())[0]}')
-    # print(f' sample handwrist entry {list(VRS_DE.result["handwrist"].items())[0]}')
-    # print(f' sample open loop entry {list(VRS_DE.result["open_loop"].items())[0]}')
 
 
 
