@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/notebooks_and_scripts')
 from vrs_extractor import VRSDataExtractor
 import numpy as np
+import tqdm
 
 # egoblur appears to work but should be fully checked with better data 
 class DataProcessor:
@@ -45,7 +46,7 @@ class DataProcessor:
     def blurring_run(self, path):
         names = os.listdir(path)
 
-        for rec_name in names:
+        for rec_name in tqdm.tqdm(names):
             vrs_path = os.path.join(path,rec_name,(rec_name + '.vrs'))
             vde = VRSDataExtractor(vrs_path)
 
@@ -62,7 +63,6 @@ class DataProcessor:
             plt.show()
 
             np.save(os.path.join(path,rec_name,(rec_name + '.npy')), curr_res)
-            break
 
     
 

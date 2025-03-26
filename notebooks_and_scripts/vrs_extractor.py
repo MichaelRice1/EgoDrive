@@ -63,8 +63,8 @@ class VRSDataExtractor():
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
         self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         self.result = {}
-        self.face_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/other/ego_blur_face.jit"
-        self.lp_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/other/ego_blur_lp.jit"
+        self.face_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/models/ego_blur_face.jit"
+        self.lp_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/models/ego_blur_lp.jit"
         self.mp_hand_landmarker_task_path = 'C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/other/hand_landmarker.task'
 
     def get_device(self) -> str:
@@ -800,14 +800,12 @@ class VRSDataExtractor():
                     for label in labels:
                         writer.writerow([start_idx + i, label])
 
-
     def save_data(self,output_path:str):
         '''
         Save the extracted data to the output path
         '''
 
         np.save(output_path, self.result)
-    
 
     def draw_landmarks_on_image(self,rgb_image, detection_result):
         MARGIN = 10  # pixels
@@ -863,7 +861,20 @@ class VRSDataExtractor():
 
         return annotated_image
 
+    def get_object_dets(self):
+        '''
+        Get automotive object detection results from the VRS file
+        '''
 
+        classes = ['left hand','right hand','gear stick','steering wheel',
+                   'stalk','left wing mirror','right wing mirror',
+                   'rear view mirror','infotainment centre','hand brake', 
+                   'mobile phone', 'dashboard', 'vanity mirror','navigation system']
+        
+
+        for image in self.result['rgb'].values():
+            pass
+            
 
 if __name__ == "__main__":
     
