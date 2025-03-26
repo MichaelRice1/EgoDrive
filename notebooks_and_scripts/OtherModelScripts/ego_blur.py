@@ -384,7 +384,6 @@ def visualize_image(
             )
 
     if 'license' in label:
-        print('license')
         if lp_detector is not None:
             detections.extend(
                 get_detections(

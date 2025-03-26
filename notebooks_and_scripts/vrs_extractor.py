@@ -9,6 +9,7 @@ import csv
 from time import time
 import pandas as pd
 import tqdm
+import io
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
@@ -62,8 +63,8 @@ class VRSDataExtractor():
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
         self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         self.result = {}
-        self.face_ego_blur = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_face/ego_blur_face.jit"
-        self.lp_ego_blur = "MSc_AI_Thesis/Coding/notebooks_and_scripts/OtherModelScripts/EgoBlurModels/ego_blur_lp/ego_blur_lp.jit"
+        self.face_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/other/ego_blur_face.jit"
+        self.lp_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/other/ego_blur_lp.jit"
         self.mp_hand_landmarker_task_path = 'C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/other/hand_landmarker.task'
 
     def get_device(self) -> str:
@@ -110,9 +111,21 @@ class VRSDataExtractor():
             end_index = num_frames_rgb
 
 
-        for index in range(start_index, end_index):
+        for index in tqdm.tqdm(range(start_index, end_index)):
+            buffer = io.BytesIO()
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)
-            img = np.array(Image.fromarray(image_data[0].to_numpy_array()).rotate(-90))
+
+            # Convert to PIL Image, rotate, resize, and then convert back to numpy
+            image_pil = Image.fromarray(image_data[0].to_numpy_array())  # Convert to PIL Image
+            image_pil = image_pil.rotate(-90)  # Rotate counterclockwise 90 degrees
+            image_pil = image_pil.resize((512, 512))  # Resize to 512x512
+
+            # Save to buffer (optional, only if needed)
+            image_pil.save(buffer, format="PNG")
+
+            # Convert back to NumPy array
+            img = np.array(image_pil)  # Convert back to NumPy array
+
             rgb_images[rgb_ts[index]] = img
 
             # print(f' original bytes {img.nbytes}' )
@@ -121,7 +134,6 @@ class VRSDataExtractor():
             # image.save('sampledata/imagetesting/pngfull.png', format='PNG', compress_level=0)
 
             # pimg = Image.fromarray(img)
-            # buffer = io.BytesIO()
             # pimg.save(buffer, format="PNG")
             # png_bytes = buffer.getvalue()
             # print(f'rgb storage size {sys.getsizeof(png_bytes)}')
@@ -187,10 +199,6 @@ class VRSDataExtractor():
         hw_points = {}
         
 
-        # et_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-eyetracking'], self.time_domain)
-        # et_end_time = self.provider.get_last_time_ns(self.stream_mappings['camera-eyetracking'], self.time_domain)
-
-
         gaze_cpf = mps.read_eyegaze(gaze_path)
         handwrist_points  = mps.hand_tracking.read_wrist_and_palm_poses(hand_path)
         
@@ -236,7 +244,6 @@ class VRSDataExtractor():
                 }
         
         self.result['handwrist'] = hw_points
-        print(f"Extracted {len(self.result['handwrist'])} handwrist points from handwrist stream")
 
         for ts in et_ts:
             gaze_point = get_nearest_eye_gaze(gaze_cpf, ts)
@@ -262,7 +269,6 @@ class VRSDataExtractor():
                     'depth': gaze_point.depth,
                 }
         self.result['gaze'] = gaze_points
-        print(f"Extracted {len(self.result['gaze'])} gaze points from gaze stream")
 
     def get_slam_data(self, slam_path:str, start_index=0, end_index=None):
 
@@ -309,8 +315,6 @@ class VRSDataExtractor():
             
         self.result['open_loop'] = open_loop_points
 
-        print(f"Extracted {len(self.result['open_loop'])} open loop points from open loop stream")
-
         for ts in closed_loop_ts:
 
             closed_loop_point = get_nearest_pose(closed_loop_traj, ts)
@@ -340,7 +344,6 @@ class VRSDataExtractor():
                 closed_loop_points[ts] = closed_loop_point
 
         self.result['closed_loop'] = closed_loop_points
-        print(f"Extracted {len(self.result['closed_loop'])} closed loop points from closed loop stream")
 
     #TODO - stop this from loading objects
     def get_IMU_data(self, start_index=0, end_index=None):
@@ -388,7 +391,7 @@ class VRSDataExtractor():
 
         pass
 
-    def ego_blur( self, input_labels:str):
+    def ego_blur( self, input_labels:str, frames):
 
         '''
         Apply ego-blur to the extracted images from the VRS file to make data anonymous
@@ -415,19 +418,56 @@ class VRSDataExtractor():
         lp_detector.eval()
 
         data = pd.read_csv(input_labels)
-        indices = data['timestep']
-        labels = data['label']
-        timestamps = list(self.result['rgb'].keys())
+
+
+
+        lp_start = data[data['type'] == 'license_plate']['start_frame'].tolist()
+        lp_end = data[data['type'] == 'license_plate']['end_frame'].tolist()
+        
+        face_start = data[data['type'] == 'face']['start_frame'].tolist()
+        face_end = data[data['type'] == 'face']['end_frame'].tolist()
+
+        lp_indices = []
+
+        for start, end in zip(lp_start, lp_end):
+            lp_indices.extend(range(start, end + 1))
+
+        face_indices = []
+        for start, end in zip(face_start, face_end):
+            face_indices.extend(range(start, end + 1))
+
+        indices = sorted(list(set(lp_indices + face_indices)))
+
+        
+        timestamps = list(frames.keys())
         filtered_ts = [timestamps[index] for index in indices]
         
-        frames = [self.result['rgb'][fts] for fts in filtered_ts]
+        filtframes = [frames[fts] for fts in filtered_ts]
 
-        print(f' Number of frames {len(frames)}')
+        #dict of labels as keys and frames as values
+        
+        label_frame_map = {}
+
+        for i in sorted(indices):
+            if i in lp_indices and i in face_indices:
+                label = 'face_license_plate'
+            elif i in lp_indices:
+                label = 'license_plate'
+            elif i in face_indices:
+                label = 'face'
+
+            label_frame_map[i] = label
+
+            
+        count = 0
 
 
-        for i,frame in tqdm.tqdm(enumerate(frames)):
+        for i,frame in tqdm.tqdm(zip(sorted(indices),filtframes)):
 
-            label = labels[i]
+            label = label_frame_map[i]
+
+            print(f'{round(100*(count/len(filtframes)),2)}% of the frames processed, now with label {label} @ frame {i}.')
+            
             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             image = bgr_frame.copy()
 
@@ -448,7 +488,12 @@ class VRSDataExtractor():
             )
 
             rgb = cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB)
-            self.result['rgb'][filtered_ts[i]] = rgb
+            
+            #update the frames with the blurred image
+            frames[i] = rgb
+
+            count += 1
+        return frames
 
     def create_ht_detector(self):
         base_options = python.BaseOptions(model_asset_path=self.mp_hand_landmarker_task_path)
@@ -761,10 +806,7 @@ class VRSDataExtractor():
         Save the extracted data to the output path
         '''
 
-        # np.save(output_path, self.result)
-
-
-        pass
+        np.save(output_path, self.result)
     
 
     def draw_landmarks_on_image(self,rgb_image, detection_result):
@@ -839,9 +881,11 @@ if __name__ == "__main__":
 
     VRS_DE = VRSDataExtractor(base_path)
 
-    VRS_DE.get_image_data()
+    # VRS_DE.get_image_data()
+    # VRS_DE.annotate(VRS_DE.result['rgb'], ego_blur_labels_path, actions_path)
 
-    VRS_DE.annotate(VRS_DE.result['rgb'], ego_blur_labels_path, actions_path)
+
+    VRS_DE.ego_blur('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/testfolder/f1/f1_blur.csv')
 
 
     #mediapipe detection
