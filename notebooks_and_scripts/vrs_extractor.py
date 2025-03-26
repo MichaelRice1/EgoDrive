@@ -496,6 +496,45 @@ class VRSDataExtractor():
         return frames
 
 
+    # NOT WORKING - TODO
+    def videotest_mediapipe(self):
+
+        '''
+        Apply mediapipe hand detection to the extracted images from the VRS file to make data anonymous
+        '''
+
+        #create a video from the extracted frames, running mediapipe on each frame
+        # and saving the output to a new video file
+        #TODO - add fps and other options
+
+        frame_height, frame_width = 1408,1408
+        frames = self.result['rgb'].values()
+
+        # Define video writer parameters
+        fps = 15  # Adjust as needed
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for AVI files (use 'mp4v' for MP4)
+        output_file = 'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/testfolder/f1/output_video.avi'
+    
+        out = cv2.VideoWriter(output_file, fourcc, fps, (frame_width, frame_height))
+        base_options = python.BaseOptions(model_asset_path='C:/Users/athen/Desktop/Github/MastersThesis/models/hand_landmarker.task')
+        options = vision.HandLandmarkerOptions(base_options=base_options,
+                                            num_hands=2)
+        detector = vision.HandLandmarker.create_from_options(options)
+
+
+        # Write frames to video
+        for frame in frames:
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+            res = detector.detect(mp_image)
+            aimg = np.array(mp_base.draw_landmarks_on_image(mp_image, res))
+            out.write(aimg)
+
+        # Release the video writer
+        out.release()
+
+        print(f"Video saved as {output_file}")
+
+
     def mediapipe_detection(self):
         
         '''
@@ -515,7 +554,7 @@ class VRSDataExtractor():
             cv2.imwrite("sampledata/imagetesting/handeasy_ann.jpg", cv2.cvtColor(aimg, cv2.COLOR_RGB2BGR))
             break
 
-            
+    
     #TODO - unsure if will work
     def rgb_undistort(self, path:str):
 
