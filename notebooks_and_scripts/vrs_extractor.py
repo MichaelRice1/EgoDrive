@@ -37,7 +37,7 @@ from projectaria_tools.core.calibration import (
 import sys
 sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/notebooks_and_scripts')
 from OtherModelScripts import ego_blur 
-
+import base_mediapipe as mp_base
 
 
 class VRSDataExtractor():
@@ -495,69 +495,27 @@ class VRSDataExtractor():
             count += 1
         return frames
 
-    def create_ht_detector(self):
-        base_options = python.BaseOptions(model_asset_path=self.mp_hand_landmarker_task_path)
-        options = vision.HandLandmarkerOptions(
-            base_options=base_options,
-            running_mode=vision.RunningMode.IMAGE,
-            num_hands=2,
-            min_hand_detection_confidence=0.5,
-            min_hand_presence_confidence=0.5,
-        )
-        detector = vision.HandLandmarker.create_from_options(options)
-
-        return detector
-    
-    def gray_to_rgb(self,img: np.ndarray) -> np.ndarray:
-        """
-        mediapipe input has to be 3 channel RGB image, so we convert the grayscale
-        image to RGB image
-        """
-        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-        return img
-
-    def mp_det(self, detector, img:np.ndarray):
-        # convert grayscale to RGB by replicating channel 3 times
-        if img.ndim == 2:
-            img = self.gray_to_rgb(img)
-
-        mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=img)
-        detection_result = detector.detect(mp_img)
-
-        return detection_result
 
     def mediapipe_detection(self):
         
-        detection_results = {}
-        hand_data = self.result['handwrist']
+        '''
+        Apply mediapipe hand detection to the extracted images from the VRS file to make data anonymous
+        '''
 
-        original_ts = list(self.result['rgb'].keys())
+        base_options = python.BaseOptions(model_asset_path='C:/Users/athen/Desktop/Github/MastersThesis/models/hand_landmarker.task')
+        options = vision.HandLandmarkerOptions(base_options=base_options,
+                                            num_hands=2)
+        detector = vision.HandLandmarker.create_from_options(options)
 
-        #converting between hand timestamps and rgb timestamps
-        left_pose_confidence = [hand_data[ts]['left_pose_confidence'] for ts in hand_data]
-        right_pose_confidence = [hand_data[ts]['right_pose_confidence'] for ts in hand_data]
-        timestamps = list(hand_data.keys())
-        frames = list(self.result['rgb'].values())
+        for i,image in enumerate(self.result['rgb'].values()):
+            print(np.shape(image))
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
+            res = detector.detect(mp_image)
+            aimg = mp_base.draw_landmarks_on_image(image, res)
+            cv2.imwrite("sampledata/imagetesting/handeasy_ann.jpg", cv2.cvtColor(aimg, cv2.COLOR_RGB2BGR))
+            break
 
-        non_zero_frames = [(timestamps[i],frames[i]) for i in range(len(timestamps)) if left_pose_confidence[i] > 0.5 or right_pose_confidence[i] > 0.5]
-
-        
-        print(f' Number of non zero frames {len(non_zero_frames)}')
-
-        for ts in original_ts:
-
-            if ts not in [x[0] for x in non_zero_frames]:
-                detection_results[ts] = None
-                continue
-            else:
-                detector = self.create_ht_detector()
-                det_res = self.mp_det(detector, self.result['rgb'][ts])
-                detection_results[ts] = det_res
-        
-        
-        self.result['mediapipe_detection'] = detection_results
-        print(f"Extracted {len(self.result['mediapipe_detection'])} mediapipe detection results")
-
+            
     #TODO - unsure if will work
     def rgb_undistort(self, path:str):
 

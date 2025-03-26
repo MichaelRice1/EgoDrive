@@ -31,15 +31,16 @@ class DataProcessor:
             gaze_path = os.path.join(path, rec_name, 'general_eye_gaze.csv')
             hand_path = os.path.join(path, rec_name, 'wrist_and_palm_poses.csv')
             vde.get_gaze_hand(gaze_path, hand_path)
-            # vde.mediapipe_detection()
+            vde.mediapipe_detection()
+            break
 
-            slam_path = os.path.join(path,rec_name,'slam')
+            # slam_path = os.path.join(path,rec_name,'slam')
             # vde.get_slam_data(slam_path)
 
             # vde.get_IMU_data()
 
-            output_path = os.path.join(path,rec_name,(rec_name + '.npy'))
-            vde.save_data(output_path)
+            # output_path = os.path.join(path,rec_name,(rec_name + '.npy'))
+            # vde.save_data(output_path)
 
 
 
@@ -68,6 +69,6 @@ class DataProcessor:
 
 if __name__ == "__main__":
     dp = DataProcessor('sampledata/testfolder')
-    # dp.annotating_run(dp.path)
-    dp.blurring_run(dp.path)
+    dp.annotating_run(dp.path)
+    # dp.blurring_run(dp.path)
 
