@@ -647,12 +647,12 @@ class VRSDataExtractor():
         return clip
 
     #TODO
-    def point_cloud_loading_and_filtering(self, base_path:str):
+    def pc_filter(self, slam_path:str):
         '''
         Load the point cloud data from the VRS file
         '''
 
-        global_points_path = base_path + '/slam_data/global_point_cloud.csv.gz'
+        global_points_path = os.path.join(slam_path, "semidense_points.csv.gz")
 
         points = mps.read_global_point_cloud(global_points_path)
 
@@ -662,13 +662,29 @@ class VRSDataExtractor():
 
         filtered_points = filter_points_from_confidence(points, inverse_distance_std_threshold, distance_std_threshold)
 
-
+        point_cloud_points = []
 
         for point in filtered_points:
+            distance_std = point.distance_std
+            graph_uid = point.graph_uid
+            inverse_distance_std = point.inverse_distance_std
             position_world = point.position_world
-            position_device = point.uid
+            uid = point.uid
 
-            break
+            point = {
+                'uid': uid,
+                'graph_uid': graph_uid,
+                'position_world': position_world,
+                'inverse_distance_std': inverse_distance_std,
+                'distance_std': distance_std
+            }
+            point_cloud_points.append(point)
+
+        self.result['Point Cloud List'] = point_cloud_points
+
+
+
+
 
         # observations_path = "/path/to/mps/output/trajectory/semidense_observations.csv.gz"
         # observations = mps.read_point_observations(observations_path)

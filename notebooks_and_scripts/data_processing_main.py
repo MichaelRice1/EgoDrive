@@ -29,7 +29,7 @@ class DataProcessor:
 
             blur_csv_path = os.path.join(path,rec_name,(rec_name + '_blur.csv'))
             actions_csv_path = os.path.join(path,rec_name,(rec_name + '_actions.csv'))
-            # vde.annotate(vde.result['rgb'],blur_csv_path,actions_csv_path )
+            vde.annotate(vde.result['rgb'],blur_csv_path,actions_csv_path )
 
             gaze_path = os.path.join(path, rec_name, 'general_eye_gaze.csv')
             hand_path = os.path.join(path, rec_name, 'wrist_and_palm_poses.csv')
@@ -41,11 +41,12 @@ class DataProcessor:
 
             vde.get_IMU_data()
 
+            vde.pc_filter(slam_path)
+
             output_path = os.path.join(path,rec_name,(rec_name + '.npy'))
             vde.save_data(output_path)
 
             break
-
 
 
     def blurring_run(self, path):
@@ -70,7 +71,6 @@ class DataProcessor:
             np.save(os.path.join(path,rec_name,(rec_name + '.npy')), curr_res)
 
     
-
 if __name__ == "__main__":
     dp = DataProcessor('sampledata/testfolder')
     dp.annotating_run(dp.path)
