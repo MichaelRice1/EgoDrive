@@ -6,6 +6,8 @@ from vrs_extractor import VRSDataExtractor
 import numpy as np
 import tqdm
 
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
+
 # egoblur appears to work but should be fully checked with better data 
 class DataProcessor:
 
@@ -23,25 +25,26 @@ class DataProcessor:
             vde = VRSDataExtractor(vrs_path)
 
             vde.get_image_data()
-            vde.videotest_mediapipe()
+            # vde.videotest_mediapipe()
 
-            # blur_csv_path = os.path.join(path,rec_name,(rec_name + '_blur.csv'))
-            # actions_csv_path = os.path.join(path,rec_name,(rec_name + '_actions.csv'))
+            blur_csv_path = os.path.join(path,rec_name,(rec_name + '_blur.csv'))
+            actions_csv_path = os.path.join(path,rec_name,(rec_name + '_actions.csv'))
             # vde.annotate(vde.result['rgb'],blur_csv_path,actions_csv_path )
 
-            # gaze_path = os.path.join(path, rec_name, 'general_eye_gaze.csv')
-            # hand_path = os.path.join(path, rec_name, 'wrist_and_palm_poses.csv')
-            # vde.get_gaze_hand(gaze_path, hand_path)
+            gaze_path = os.path.join(path, rec_name, 'general_eye_gaze.csv')
+            hand_path = os.path.join(path, rec_name, 'wrist_and_palm_poses.csv')
+            vde.get_gaze_hand(gaze_path, hand_path)
             # vde.mediapipe_detection()
-            # break
 
-            # slam_path = os.path.join(path,rec_name,'slam')
-            # vde.get_slam_data(slam_path)
+            slam_path = os.path.join(path,rec_name,'slam')
+            vde.get_slam_data(slam_path)
 
-            # vde.get_IMU_data()
+            vde.get_IMU_data()
 
-            # output_path = os.path.join(path,rec_name,(rec_name + '.npy'))
-            # vde.save_data(output_path)
+            output_path = os.path.join(path,rec_name,(rec_name + '.npy'))
+            vde.save_data(output_path)
+
+            break
 
 
 

@@ -292,25 +292,38 @@ class VRSDataExtractor():
                 # print(f'open loop point',open_loop_point)
 
                 T_world_device = open_loop_point.transform_odometry_device
+                tworld_rotation = T_world_device.rotation().to_matrix()
+                tworld_translation = T_world_device.translation()
                 
                 rgb_stream_label = self.provider.get_label_from_stream_id(self.stream_mappings['camera-rgb'])
                 device_calibration = self.provider.get_device_calibration()
                 rgb_camera_calibration = device_calibration.get_camera_calib(rgb_stream_label)
 
                 T_device_rgb_camera = rgb_camera_calibration.get_transform_device_camera()
+                tdevice_rgb_trans = T_device_rgb_camera.translation()
+                tdevice_rgb_rotation = T_device_rgb_camera.rotation().to_matrix()
+
+
                 T_world_rgb_camera = T_world_device @ T_device_rgb_camera
+                tworld_rgb_trans = T_world_rgb_camera.translation()
+                tworld_rgb_rotation = T_world_rgb_camera.rotation().to_matrix()
+
 
                 open_loop_point = {
                     "tracking_timestamp": open_loop_point.tracking_timestamp,
                     "quality_score": open_loop_point.quality_score,
                     "linear_velocity": open_loop_point.device_linear_velocity_odometry,
                     "angular_velocity_device": open_loop_point.angular_velocity_device,
-                    "t_world_device": T_world_device,
+                    "t_world_device_rotation": tworld_rotation,
+                    "t_world_device_translation": tworld_translation,
                     "gravity": open_loop_point.gravity_odometry,
-                    "world_rgb_camera_translation": T_world_rgb_camera,
-                    "device_rgb_camera_rotation": T_device_rgb_camera
-                }
+                    "world_rgb_camera_translation": tworld_rgb_trans,
+                    "world_rgb_camera_rotation": tworld_rgb_rotation,
+                    "device_rgb_camera_rotation": tdevice_rgb_rotation,
+                    "device_rgb_camera_translation": tdevice_rgb_trans,
 
+                }
+                
                 open_loop_points[ts] = open_loop_point
             
         self.result['open_loop'] = open_loop_points
@@ -322,26 +335,39 @@ class VRSDataExtractor():
             if closed_loop_point is not None:
 
                 T_world_device = closed_loop_point.transform_world_device
+                tworld_rotation = T_world_device.rotation().to_matrix()
+                tworld_translation = T_world_device.translation()
                 
                 rgb_stream_label = self.provider.get_label_from_stream_id(self.stream_mappings['camera-rgb'])
                 device_calibration = self.provider.get_device_calibration()
                 rgb_camera_calibration = device_calibration.get_camera_calib(rgb_stream_label)
 
                 T_device_rgb_camera = rgb_camera_calibration.get_transform_device_camera()
+                tdevice_rgb_trans = T_device_rgb_camera.translation()
+                tdevice_rgb_rotation = T_device_rgb_camera.rotation().to_matrix()
+            
                 T_world_rgb_camera = T_world_device @ T_device_rgb_camera
+                tworld_rgb_trans = T_world_rgb_camera.translation()
+                tworld_rgb_rotation = T_world_rgb_camera.rotation().to_matrix()
+
 
                 closed_loop_point = {
                     "tracking_timestamp": closed_loop_point.tracking_timestamp,
                     "quality_score": closed_loop_point.quality_score,
                     "linear_velocity": closed_loop_point.device_linear_velocity_device,
                     "angular_velocity_device": closed_loop_point.angular_velocity_device,
-                    "translation_world": T_world_device,
+                    "t_world_device_rotation": tworld_rotation,
+                    "t_world_device_translation": tworld_translation,
                     "gravity": closed_loop_point.gravity_world,
-                    "world_rgb_camera_translation": T_world_rgb_camera,
-                    "device_rgb_camera_rotation": T_device_rgb_camera
+                    "world_rgb_camera_translation": tworld_rgb_trans,
+                    "world_rgb_camera_rotation": tworld_rgb_rotation,
+                    "device_rgb_camera_rotation": tdevice_rgb_rotation,
+                    "device_rgb_camera_translation": tdevice_rgb_trans,
                 }
 
+
                 closed_loop_points[ts] = closed_loop_point
+
 
         self.result['closed_loop'] = closed_loop_points
 
@@ -371,12 +397,34 @@ class VRSDataExtractor():
 
         for ind in range(start_index, end_index):
             imu_right_point = self.provider.get_imu_data_by_index(self.stream_mappings['imu-right'], ind)
+            right_data = {
+                    "accel_msec2": imu_right_point.accel_msec2,
+                    "accel_valid": imu_right_point.accel_valid,
+                    "capture_timestamp_ns": imu_right_point.capture_timestamp_ns,
+                    "gyro_radsec": imu_right_point.gyro_radsec,
+                    "gyro_valid": imu_right_point.gyro_valid,
+                    "mag_tesla": imu_right_point.mag_tesla,
+                    "mag_valid": imu_right_point.mag_valid,
+                    "temperature": imu_right_point.temperature,
+                }
 
             if ind < num_data_imu_left:
                 imu_left_point = self.provider.get_imu_data_by_index(self.stream_mappings['imu-left'], ind)
-                imu_left[imu_left_ts[ind]] = imu_left_point
+                left_data = {
+                    "accel_msec2": imu_left_point.accel_msec2,
+                    "accel_valid": imu_left_point.accel_valid,
+                    "capture_timestamp_ns": imu_left_point.capture_timestamp_ns,
+                    "gyro_radsec": imu_left_point.gyro_radsec,
+                    "gyro_valid": imu_left_point.gyro_valid,
+                    "mag_tesla": imu_left_point.mag_tesla,
+                    "mag_valid": imu_left_point.mag_valid,
+                    "temperature": imu_left_point.temperature,
+                }
+
+                imu_left[imu_left_ts[ind]] = left_data
                 
-            imu_right[imu_right_ts[ind]] = imu_right_point
+            imu_right[imu_right_ts[ind]] = right_data
+        
         
         self.result['imu_right'] = imu_right
         self.result['imu_left'] = imu_left
@@ -553,7 +601,6 @@ class VRSDataExtractor():
             aimg = mp_base.draw_landmarks_on_image(image, res)
             cv2.imwrite("sampledata/imagetesting/handeasy_ann.jpg", cv2.cvtColor(aimg, cv2.COLOR_RGB2BGR))
             break
-
     
     #TODO - unsure if will work
     def rgb_undistort(self, path:str):
