@@ -920,41 +920,6 @@ class VRSDataExtractor():
             pass
             
 
-if __name__ == "__main__":
-    
-    base_path = 'sampledata/mps_Lab_Test_vrs/Lab_Test.vrs'
-    file_name = base_path.split("/")[-1].split(".")[0]
-    gaze_path = "/".join(base_path.split("/")[:-1]) + '/eye_gaze/general_eye_gaze.csv'
-    hand_path = "/".join(base_path.split("/")[:-1]) + '/hand_tracking/wrist_and_palm_poses.csv'
-    slam_path = "/".join(base_path.split("/")[:-1]) + '/slam_data'
-    video_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_video.mp4'
-    ego_blur_labels_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_labels.csv'
-    actions_path = "/".join(base_path.split("/")[:-1]) + f'/{file_name}_actions.csv'
-    output_path = 'sampledata/imagetesting/Lab_Test_data.npy'
-
-
-
-    VRS_DE = VRSDataExtractor(base_path)
-
-    # VRS_DE.get_image_data()
-    # VRS_DE.annotate(VRS_DE.result['rgb'], ego_blur_labels_path, actions_path)
-
-
-    VRS_DE.ego_blur('C:/Users/athen/Desktop/Github/MastersThesis/sampledata/testfolder/f1/f1_blur.csv')
-
-
-    #mediapipe detection
-    # VRS_DE.mediapipe_detection()
-    # first_non_zero_mediapipe = [ts for ts in VRS_DE.result['mediapipe_detection'] if VRS_DE.result['mediapipe_detection'][ts] is not None][0]
-    # det_res = VRS_DE.result['mediapipe_detection'][first_non_zero_mediapipe]
-    # index = list(VRS_DE.result['mediapipe_detection'].keys()).index(first_non_zero_mediapipe)
-    # img = list(VRS_DE.result['rgb'].values())[index]
-
-    # img_w_landmarks = VRS_DE.draw_landmarks_on_image(img, det_res)
-    # plt.figure(figsize=(10, 10))
-    # plt.imshow(img_w_landmarks)
-    # plt.axis("off")
-    # plt.savefig('sampledata/imagetesting/mediapipe_detection.png')
 
     
 
