@@ -149,10 +149,7 @@ class VRSDataExtractor():
         for index in range(start_index, end_index):
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)
             img = np.array(Image.fromarray(image_data[0].to_numpy_array()))
-            # print(f'et storage size {sys.getsizeof(img.nbytes)}')
-            # et_img = Image.fromarray(img)
-            # et_img.save('sampledata/imagetesting/et.png', format='PNG', compress_level=0)
-            # et_images[et_ts[index]] = img
+            et_images[et_ts[index]] = img
             # break
              
         self.result['et'] = et_images
@@ -439,7 +436,7 @@ class VRSDataExtractor():
 
         pass
 
-    def ego_blur( self, input_labels:str, frames):
+    def ego_blur(self, input_labels:str, frames):
 
         '''
         Apply ego-blur to the extracted images from the VRS file to make data anonymous
@@ -543,7 +540,6 @@ class VRSDataExtractor():
             count += 1
         return frames
 
-
     # NOT WORKING - TODO
     def videotest_mediapipe(self):
 
@@ -581,7 +577,6 @@ class VRSDataExtractor():
         out.release()
 
         print(f"Video saved as {output_file}")
-
 
     def mediapipe_detection(self):
         

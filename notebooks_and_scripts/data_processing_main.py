@@ -2,7 +2,7 @@ import os
 import sys
 import matplotlib.pyplot as plt
 sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/notebooks_and_scripts')
-from vrs_extractor import VRSDataExtractor
+from MSc_AI_Thesis.notebooks_and_scripts.utils.vrs_extractor import VRSDataExtractor
 import numpy as np
 import tqdm
 
