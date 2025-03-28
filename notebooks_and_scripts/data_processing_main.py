@@ -1,8 +1,8 @@
 import os 
 import sys
 import matplotlib.pyplot as plt
-sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/notebooks_and_scripts')
-from MSc_AI_Thesis.notebooks_and_scripts.utils.vrs_extractor import VRSDataExtractor
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from notebooks_and_scripts.vrs_extractor import VRSDataExtractor
 import numpy as np
 import tqdm
 

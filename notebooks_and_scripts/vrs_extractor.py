@@ -118,10 +118,10 @@ class VRSDataExtractor():
             # Convert to PIL Image, rotate, resize, and then convert back to numpy
             image_pil = Image.fromarray(image_data[0].to_numpy_array())  # Convert to PIL Image
             image_pil = image_pil.rotate(-90)  # Rotate counterclockwise 90 degrees
-            image_pil = image_pil.resize((512, 512))  # Resize to 512x512
+            image_pil = image_pil.resize((640, 640))  # Resize to 512x512
 
             # Save to buffer (optional, only if needed)
-            image_pil.save(buffer, format="PNG")
+            # image_pil.save(buffer, format="PNG")
 
             # Convert back to NumPy array
             img = np.array(image_pil)  # Convert back to NumPy array
