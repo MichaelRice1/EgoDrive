@@ -13,7 +13,6 @@ import cv2
 import numpy as np
 import torch
 import torchvision
-from moviepy.editor import ImageSequenceClip
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
 
@@ -405,75 +404,6 @@ def visualize_image(
     # write_image(image, output_image_path)
 
 
-def visualize_video(
-    input_video_path: str,
-    face_detector: torch.jit._script.RecursiveScriptModule,
-    lp_detector: torch.jit._script.RecursiveScriptModule,
-    face_model_score_threshold: float,
-    lp_model_score_threshold: float,
-    nms_iou_threshold: float,
-    output_video_path: str,
-    scale_factor_detections: float,
-    output_video_fps: int,
-):
-    """
-    parameter input_video_path: absolute path to the input video
-    parameter face_detector: face detector model to perform face detections
-    parameter lp_detector: face detector model to perform face detections
-    parameter face_model_score_threshold: face model score threshold to filter out low confidence detection
-    parameter lp_model_score_threshold: license plate model score threshold to filter out low confidence detection
-    parameter nms_iou_threshold: NMS iou threshold
-    parameter output_video_path: absolute path where the visualized video will be saved
-    parameter scale_factor_detections: scale detections by the given factor to allow blurring more area
-    parameter output_video_fps: fps of the visualized video
-
-    Perform detections on the input video and save the output video at the given path.
-    """
-    visualized_images = []
-    video_reader_clip = VideoFileClip(input_video_path)
-    for frame in tqdm.tqdm(video_reader_clip.iter_frames()):
-        if len(frame.shape) == 2:
-            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
-        image = frame.copy()
-        bgr_image = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        image_tensor = get_image_tensor(bgr_image)
-        image_tensor_copy = image_tensor.clone()
-        detections = []
-        # get face detections
-        if face_detector is not None:
-            detections.extend(
-                get_detections(
-                    face_detector,
-                    image_tensor,
-                    face_model_score_threshold,
-                    nms_iou_threshold,
-                )
-            )
-        # get license plate detections
-        if lp_detector is not None:
-            detections.extend(
-                get_detections(
-                    lp_detector,
-                    image_tensor_copy,
-                    lp_model_score_threshold,
-                    nms_iou_threshold,
-                )
-            )
-        visualized_images.append(
-            visualize(
-                image,
-                detections,
-                scale_factor_detections,
-            )
-        )
-
-    video_reader_clip.close()
-
-    if visualized_images:
-        video_writer_clip = ImageSequenceClip(visualized_images, fps=output_video_fps)
-        video_writer_clip.write_videofile(output_video_path)
-        video_writer_clip.close()
-
 
 if __name__ == "__main__":
     args = validate_inputs(parse_args())
@@ -505,15 +435,4 @@ if __name__ == "__main__":
             args.scale_factor_detections,
         )
 
-    if args.input_video_path is not None:
-        visualize_video(
-            args.input_video_path,
-            face_detector,
-            lp_detector,
-            args.face_model_score_threshold,
-            args.lp_model_score_threshold,
-            args.nms_iou_threshold,
-            args.output_video_path,
-            args.scale_factor_detections,
-            args.output_video_fps,
-        )
+    

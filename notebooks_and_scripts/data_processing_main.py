@@ -18,7 +18,9 @@ class DataProcessor:
 
     def annotating_run(self, path):
 
-        names = os.listdir(path)
+        names = sorted([p for p in os.listdir(path) if 'Store' not in p])
+
+        names = names[1:2]
 
         for rec_name in names:
             vrs_path = os.path.join(path,rec_name,(rec_name + '.vrs'))
@@ -26,18 +28,21 @@ class DataProcessor:
 
             vde.get_image_data()
             # vde.videotest_mediapipe()
+            gaze_path = os.path.join(path, rec_name, 'general_eye_gaze.csv')
+            hand_path = os.path.join(path, rec_name, 'wrist_and_palm_poses.csv')
+            vde.get_gaze_hand(gaze_path, hand_path)
 
             blur_csv_path = os.path.join(path,rec_name,(rec_name + '_blur.csv'))
             actions_csv_path = os.path.join(path,rec_name,(rec_name + '_actions.csv'))
             vde.annotate(vde.result['rgb'],blur_csv_path,actions_csv_path )
 
-            gaze_path = os.path.join(path, rec_name, 'general_eye_gaze.csv')
-            hand_path = os.path.join(path, rec_name, 'wrist_and_palm_poses.csv')
-            vde.get_gaze_hand(gaze_path, hand_path)
+            
             # vde.mediapipe_detection()
 
             slam_path = os.path.join(path,rec_name,'slam')
-            vde.get_slam_data(slam_path)
+
+            if os.path.exists(slam_path):
+                vde.get_slam_data(slam_path)
 
             vde.get_IMU_data()
 
@@ -72,7 +77,7 @@ class DataProcessor:
 
     
 if __name__ == "__main__":
-    dp = DataProcessor('sampledata/testfolder')
+    dp = DataProcessor('sampledata/driving_data/')
     dp.annotating_run(dp.path)
     # dp.blurring_run(dp.path)
 

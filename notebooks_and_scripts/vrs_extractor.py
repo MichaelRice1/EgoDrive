@@ -4,17 +4,18 @@ from matplotlib import pyplot as plt
 from PIL import Image
 import torch
 import cv2
-from moviepy.editor import ImageSequenceClip
 import csv
 from time import time
 import pandas as pd
 import tqdm
 import io
+'''
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+'''
 from projectaria_tools.core import data_provider
 from projectaria_tools.core.image import InterpolationMethod
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
@@ -37,7 +38,6 @@ from projectaria_tools.core.calibration import (
 import sys
 sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/notebooks_and_scripts')
 from OtherModelScripts import ego_blur 
-import base_mediapipe as mp_base
 
 
 class VRSDataExtractor():
@@ -265,6 +265,7 @@ class VRSDataExtractor():
                     "projection": gaze_projection,
                     'depth': gaze_point.depth,
                 }
+                print(f'Gaze point {ts} - {gaze_projection}')
         self.result['gaze'] = gaze_points
 
     def get_slam_data(self, slam_path:str, start_index=0, end_index=None):
@@ -540,106 +541,7 @@ class VRSDataExtractor():
             count += 1
         return frames
 
-    # NOT WORKING - TODO
-    def videotest_mediapipe(self):
 
-        '''
-        Apply mediapipe hand detection to the extracted images from the VRS file to make data anonymous
-        '''
-
-        #create a video from the extracted frames, running mediapipe on each frame
-        # and saving the output to a new video file
-        #TODO - add fps and other options
-
-        frame_height, frame_width = 1408,1408
-        frames = self.result['rgb'].values()
-
-        # Define video writer parameters
-        fps = 15  # Adjust as needed
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for AVI files (use 'mp4v' for MP4)
-        output_file = 'C:/Users/athen/Desktop/Github/MastersThesis/sampledata/testfolder/f1/output_video.avi'
-    
-        out = cv2.VideoWriter(output_file, fourcc, fps, (frame_width, frame_height))
-        base_options = python.BaseOptions(model_asset_path='C:/Users/athen/Desktop/Github/MastersThesis/models/hand_landmarker.task')
-        options = vision.HandLandmarkerOptions(base_options=base_options,
-                                            num_hands=2)
-        detector = vision.HandLandmarker.create_from_options(options)
-
-
-        # Write frames to video
-        for frame in frames:
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-            res = detector.detect(mp_image)
-            aimg = np.array(mp_base.draw_landmarks_on_image(mp_image, res))
-            out.write(aimg)
-
-        # Release the video writer
-        out.release()
-
-        print(f"Video saved as {output_file}")
-
-    def mediapipe_detection(self):
-        
-        '''
-        Apply mediapipe hand detection to the extracted images from the VRS file to make data anonymous
-        '''
-
-        base_options = python.BaseOptions(model_asset_path='C:/Users/athen/Desktop/Github/MastersThesis/models/hand_landmarker.task')
-        options = vision.HandLandmarkerOptions(base_options=base_options,
-                                            num_hands=2)
-        detector = vision.HandLandmarker.create_from_options(options)
-
-        for i,image in enumerate(self.result['rgb'].values()):
-            print(np.shape(image))
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
-            res = detector.detect(mp_image)
-            aimg = mp_base.draw_landmarks_on_image(image, res)
-            cv2.imwrite("sampledata/imagetesting/handeasy_ann.jpg", cv2.cvtColor(aimg, cv2.COLOR_RGB2BGR))
-            break
-    
-    #TODO - unsure if will work
-    def rgb_undistort(self, path:str):
-
-        '''
-        Undistort the extracted images from the VRS file
-        '''
-
-        # rgb_images = results['rgb']
-
-
-
-        samp = cv2.imread(path)
-
-        with open('MSc_AI_Thesis/Coding/other/calibration.json') as f:
-            sc = f.read()
-
-
-        sensors_calib = device_calibration_from_json_string(sc)
-        rgb_calib = sensors_calib.get_camera_calib("camera-rgb")
-        dst_calib = get_linear_camera_calibration(512, 512, 150, "camera-rgb")
-
-        # for img in rgb_images:
-
-        undistorted_rgb_image = distort_by_calibration(
-                        samp, dst_calib, rgb_calib,
-                        InterpolationMethod.BILINEAR
-                    )
-        
-        plt.imshow(undistorted_rgb_image)
-        plt.show()
-        
-        #interpolation from InterpolationMethod
-
-    def video_from_frames(self,rgb_frames:list,output_path:str,fps=15):
-            
-        '''
-        Create a video from the extracted frames and turn into moviepy VideoClip
-        '''
-        clip = ImageSequenceClip(rgb_frames, fps=fps)
-        clip.write_videofile(f"{output_path}", codec="libx265")
-
-
-        return clip
 
     #TODO
     def pc_filter(self, slam_path:str):
@@ -716,8 +618,8 @@ class VRSDataExtractor():
         }
 
         # Key mappings (cross-platform)
-        LEFT_KEY = 81 if os.name == 'posix' else 2424832
-        RIGHT_KEY = 83 if os.name == 'posix' else 2555904
+        LEFT_KEY = 63234 if os.name == 'posix' else 2424832
+        RIGHT_KEY = 63235 if os.name == 'posix' else 2555904
         ESC_KEY = 27
         EXIT_KEY = ord('x')  # Non-conflicting exit key
         FRAME_INTERVAL = 1.0 / fps
@@ -768,7 +670,8 @@ class VRSDataExtractor():
 
                 ts = sorted_ts[current_idx]
                 frame = frames_dict[ts].copy()
-
+                projection = self.result['gaze'][ts]['projection'] if ts in self.result['gaze'] else None
+                print(projection)
                 # Display status
                 status = []
                 if is_playing: status.append(f"[PLAYING {fps}FPS]")
@@ -780,7 +683,8 @@ class VRSDataExtractor():
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)} (X: exit, SPACE: play/pause)", 
                         (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                
+                if projection is not None:
+                    frame = cv2.circle(frame, (int(projection[0]), int(projection[1])), 9, (0, 0, 255), 3)
                 cv2.imshow(window_name, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 key = cv2.waitKeyEx(1)
 
@@ -862,59 +766,7 @@ class VRSDataExtractor():
 
         np.save(output_path, self.result)
 
-    def draw_landmarks_on_image(self,rgb_image, detection_result):
-        MARGIN = 10  # pixels
-        FONT_SIZE = 1
-        FONT_THICKNESS = 1
-        HANDEDNESS_TEXT_COLOR = (88, 205, 54)  # vibrant green
-
-        hand_landmarks_list = detection_result.hand_landmarks
-        handedness_list = detection_result.handedness
-        annotated_image = np.copy(rgb_image)
-
-        # Loop through the detected hands to visualize.
-        for idx in range(len(hand_landmarks_list)):
-            hand_landmarks = hand_landmarks_list[idx]
-            handedness = handedness_list[idx]
-
-            # Draw the hand landmarks.
-            hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-            hand_landmarks_proto.landmark.extend(
-                [
-                    landmark_pb2.NormalizedLandmark(
-                        x=landmark.x, y=landmark.y, z=landmark.z
-                    )
-                    for landmark in hand_landmarks
-                ]
-            )
-            solutions.drawing_utils.draw_landmarks(
-                annotated_image,
-                hand_landmarks_proto,
-                solutions.hands.HAND_CONNECTIONS,
-                solutions.drawing_styles.get_default_hand_landmarks_style(),
-                solutions.drawing_styles.get_default_hand_connections_style(),
-            )
-
-            # Get the top left corner of the detected hand's bounding box.
-            height, width, _ = annotated_image.shape
-            x_coordinates = [landmark.x for landmark in hand_landmarks]
-            y_coordinates = [landmark.y for landmark in hand_landmarks]
-            text_x = int(min(x_coordinates) * width)
-            text_y = int(min(y_coordinates) * height) - MARGIN
-
-            # Draw handedness (left or right hand) on the image.
-            cv2.putText(
-                annotated_image,
-                f"{handedness[0].category_name}",
-                (text_x, text_y),
-                cv2.FONT_HERSHEY_DUPLEX,
-                FONT_SIZE,
-                HANDEDNESS_TEXT_COLOR,
-                FONT_THICKNESS,
-                cv2.LINE_AA,
-            )
-
-        return annotated_image
+    
 
     def get_object_dets(self):
         '''
