@@ -63,8 +63,8 @@ class VRSDataExtractor():
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
         self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         self.result = {}
-        self.face_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/models/ego_blur_face.jit"
-        self.lp_ego_blur = "C:/Users/athen/Desktop/Github/MastersThesis/models/ego_blur_lp.jit"
+        self.face_ego_blur = "models/ego_blur_face.jit"
+        self.lp_ego_blur = "models/ego_blur_lp.jit"
         self.mp_hand_landmarker_task_path = 'C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/other/hand_landmarker.task'
 
     def get_device(self) -> str:
@@ -200,47 +200,19 @@ class VRSDataExtractor():
         handwrist_points  = mps.hand_tracking.read_wrist_and_palm_poses(hand_path)
         
 
+        if start_index == 0 and end_index == None:
+            num_et = len(gaze_cpf)
+            num_hw = len(handwrist_points)
+            et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_et)]
+            hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_hw)]
+        else:
+            et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
+            #hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
+
+        print(f'length of eye tracking tiemstamps {len(et_ts)}')
+
+
         
-
-        num_et = len(gaze_cpf)
-        num_hw = len(handwrist_points)
-
-        et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_et)]
-        hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_hw)]
-
-
-        for ts in hw_ts:
-    
-            wrist_and_palm_pose = get_nearest_wrist_and_palm_pose(handwrist_points, ts)
-
-            if wrist_and_palm_pose is not None:
-                
-                left_pose_confidence = wrist_and_palm_pose.left_hand.confidence
-                left_wrist_position_device = wrist_and_palm_pose.left_hand.wrist_position_device
-                left_palm_position_device = wrist_and_palm_pose.left_hand.palm_position_device
-                left_wrist_normal_device = wrist_and_palm_pose.left_hand.wrist_and_palm_normal_device.wrist_normal_device
-                left_palm_normal_device = wrist_and_palm_pose.left_hand.wrist_and_palm_normal_device.palm_normal_device
-
-                right_pose_confidence = wrist_and_palm_pose.right_hand.confidence
-                right_wrist_position_device = wrist_and_palm_pose.right_hand.wrist_position_device
-                right_palm_position_device = wrist_and_palm_pose.right_hand.palm_position_device
-                right_wrist_normal_device = wrist_and_palm_pose.right_hand.wrist_and_palm_normal_device.wrist_normal_device
-                right_palm_normal_device = wrist_and_palm_pose.right_hand.wrist_and_palm_normal_device.palm_normal_device
-
-                hw_points[ts] = {
-                    "left_pose_confidence": left_pose_confidence,
-                    "left_wrist_position_device": left_wrist_position_device,
-                    "left_palm_position_device": left_palm_position_device,
-                    "left_wrist_normal_device": left_wrist_normal_device,
-                    "left_palm_normal_device": left_palm_normal_device,
-                    "right_pose_confidence": right_pose_confidence,
-                    "right_wrist_position_device": right_wrist_position_device,
-                    "right_palm_position_device": right_palm_position_device,
-                    "right_wrist_normal_device": right_wrist_normal_device,
-                    "right_palm_normal_device": right_palm_normal_device
-                }
-        
-        self.result['handwrist'] = hw_points
 
         for ts in et_ts:
             gaze_point = get_nearest_eye_gaze(gaze_cpf, ts)
@@ -265,7 +237,6 @@ class VRSDataExtractor():
                     "projection": gaze_projection,
                     'depth': gaze_point.depth,
                 }
-                print(f'Gaze point {ts} - {gaze_projection}')
         self.result['gaze'] = gaze_points
 
     def get_slam_data(self, slam_path:str, start_index=0, end_index=None):
@@ -541,8 +512,6 @@ class VRSDataExtractor():
             count += 1
         return frames
 
-
-
     #TODO
     def pc_filter(self, slam_path:str):
         '''
@@ -632,6 +601,9 @@ class VRSDataExtractor():
                     csv.writer(f).writerow(headers)
 
         sorted_ts = sorted(frames_dict.keys())
+        gaze_points = list(self.result['gaze'].values())
+
+
         if not sorted_ts:
             print("No frames to label!")
             return
@@ -670,8 +642,11 @@ class VRSDataExtractor():
 
                 ts = sorted_ts[current_idx]
                 frame = frames_dict[ts].copy()
-                projection = self.result['gaze'][ts]['projection'] if ts in self.result['gaze'] else None
-                print(projection)
+
+                projection = gaze_points[current_idx]['projection'] / (1408/640)
+                depth = gaze_points[current_idx]['depth']
+
+    
                 # Display status
                 status = []
                 if is_playing: status.append(f"[PLAYING {fps}FPS]")
@@ -683,8 +658,10 @@ class VRSDataExtractor():
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)} (X: exit, SPACE: play/pause)", 
                         (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
                 if projection is not None:
-                    frame = cv2.circle(frame, (int(projection[0]), int(projection[1])), 9, (0, 0, 255), 3)
+                    frame = cv2.circle(frame, (int(projection[0]), int(projection[1])), 6, (255, 0, 0), 3)
+
                 cv2.imshow(window_name, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 key = cv2.waitKeyEx(1)
 
@@ -765,8 +742,6 @@ class VRSDataExtractor():
         '''
 
         np.save(output_path, self.result)
-
-    
 
     def get_object_dets(self):
         '''
