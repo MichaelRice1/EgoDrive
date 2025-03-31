@@ -80,6 +80,6 @@ class DataProcessor:
     
 if __name__ == "__main__":
     dp = DataProcessor('sampledata/driving_data/')
-    #dp.annotating_run(dp.path)
+    # dp.annotating_run(dp.path)
     dp.blurring_run(dp.path)
 

@@ -455,10 +455,8 @@ class VRSDataExtractor():
 
         indices = sorted(list(set(lp_indices + face_indices)))
 
-        
         timestamps = list(frames.keys())
         filtered_ts = [timestamps[index] for index in indices]
-        
         filtframes = [frames[fts] for fts in filtered_ts]
 
         #dict of labels as keys and frames as values
@@ -507,9 +505,11 @@ class VRSDataExtractor():
             rgb = cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB)
             
             #update the frames with the blurred image
-            frames[i] = rgb
+            frame_ts = list(frames.keys())[i]
+            frames[frame_ts] = rgb
 
             count += 1
+        print(f'Returing {len(frames)} frames with ego-blur applied')
         return frames
 
     #TODO
