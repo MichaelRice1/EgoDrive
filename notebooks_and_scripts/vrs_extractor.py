@@ -9,6 +9,7 @@ from time import time
 import pandas as pd
 import tqdm
 import io
+from ultralytics import YOLO
 '''
 import mediapipe as mp
 from mediapipe import solutions
@@ -118,7 +119,7 @@ class VRSDataExtractor():
             # Convert to PIL Image, rotate, resize, and then convert back to numpy
             image_pil = Image.fromarray(image_data[0].to_numpy_array())  # Convert to PIL Image
             image_pil = image_pil.rotate(-90)  # Rotate counterclockwise 90 degrees
-            # image_pil = image_pil.resize((640, 640))  # Resize to 512x512
+            image_pil = image_pil.resize((640, 640)) 
 
             # Save to buffer (optional, only if needed)
             # image_pil.save(buffer, format="PNG")
@@ -756,7 +757,82 @@ class VRSDataExtractor():
 
         for image in self.result['rgb'].values():
             pass
+    
+    def heatmaps(self, frames, gazes):
+        '''
+        Create heatmaps for the extracted data from the VRS file
+        '''
+
+
+        for img,gaze in zip(frames,gazes):
+            heatmap = np.zeros((640, 640))
+            scale = (640/1408)
+            gaze = scale * gaze
+
+
+
+        # img_size=(640,640)
+        # heatmap = np.zeros()
+        # print(len(gaze_points))
+        # #normalise gaze points from original frame size of 1408x1408 to 224x224
+        # scale = (224/1408)
+        # gaze_points = [(x*scale, y*scale) for x, y in gaze_points]
+
+        # for x, y in gaze_points:
+        #     heatmap = cv2.circle(heatmap, (int(x), int(y)), radius=5, color=1, thickness=-1)
+
+        
+
+        # return cv2.GaussianBlur(heatmap, (15, 15), 0)
+
+
+    def person_detection(self, image):
+        '''
+        Detect persons in the image using the mediapipe pose detection model
+        '''
+
+        model = YOLO("/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/models/yolo11n.pt")
+        person_confidences = []
+
+        # Run inference
+        results = model(image)[0]  # Get the first result
+
+        person_indices = [results.boxes.cls == 0][0]
+        
+        
+        for i,item in enumerate(person_indices):
             
+            if item == True:
+                person_confidences.append(results.boxes.conf[i].item())
+            else:
+                person_confidences.append(0.0)
+
+        
+        for i in range(len(person_confidences)):
+            if person_confidences[i] < 0.5:
+                person_indices[i] = False
+
+        people_bboxes = results.boxes.xyxy[person_indices]
+
+        cropped_images = []
+
+        for bbox in people_bboxes:
+            x1, y1, x2, y2 = map(int, bbox[:4])
+            cropped_image = image[y1:y2, x1:x2]
+            cropped_images.append(cropped_image)
+
+        return cropped_images
+
+
+        
+
+
+
+
+
+        
+
+        
 
 
     
