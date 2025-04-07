@@ -809,7 +809,7 @@ class VRSDataExtractor():
 
         
         for i in range(len(person_confidences)):
-            if person_confidences[i] < 0.5:
+            if person_confidences[i] < 0.4:
                 person_indices[i] = False
 
         people_bboxes = results.boxes.xyxy[person_indices]
