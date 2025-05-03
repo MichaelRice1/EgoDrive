@@ -78,7 +78,7 @@ class VRSDataExtractor():
             else f"cuda:{torch.cuda.current_device()}"
         )
     
-    def get_image_data(self, start_index=0, end_index=None):
+    def get_image_data(self, start_index=0, end_index=None, rgb_flag = False):
 
         '''
         Extracts frames from the VRS file based on the index/time domain. The frames are extracted from the following streams:
@@ -115,6 +115,10 @@ class VRSDataExtractor():
         for index in tqdm.tqdm(range(start_index, end_index)):
             buffer = io.BytesIO()
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)
+            
+            self.provider.set_devignetting(True)
+            self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/other/devignetting_masks_bin')
+
 
             # Convert to PIL Image, rotate, resize, and then convert back to numpy
             image_pil = Image.fromarray(image_data[0].to_numpy_array())  # Convert to PIL Image
@@ -146,36 +150,36 @@ class VRSDataExtractor():
         self.result['rgb'] = rgb_images
         print(f"Extracted {len(self.result['rgb'])} images from {rgblabel} stream")
 
-
-        for index in range(start_index, end_index):
-            image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)
-            img = np.array(Image.fromarray(image_data[0].to_numpy_array()))
-            et_images[et_ts[index]] = img
-            # break
-             
-        self.result['et'] = et_images
-        print(f"Extracted {len(self.result['et'])} images from {etlabel} stream")
-
-        try:
+        if not rgb_flag:
             for index in range(start_index, end_index):
-                left_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-left'], index)
-                right_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-right'], index)
-                left_img = np.array(Image.fromarray(left_image_data[0].to_numpy_array()))
-                right_img = np.array(Image.fromarray(right_image_data[0].to_numpy_array()))
-                # print(f'slam storage size {sys.getsizeof(left_img.nbytes)}')
-                # slam_img = Image.fromarray(left_img)
-                # slam_img.save('sampledata/imagetesting/slam_left.png', format='PNG', compress_level=0)
-                slam_left_images[slam_left_ts[index]] = left_img
-                slam_right_images[slam_right_ts[index]] = right_img
+                image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)
+                img = np.array(Image.fromarray(image_data[0].to_numpy_array()))
+                et_images[et_ts[index]] = img
                 # break
+                
+            self.result['et'] = et_images
+            print(f"Extracted {len(self.result['et'])} images from {etlabel} stream")
 
-            self.result['slam_left'] = slam_left_images
-            self.result['slam_right'] = slam_right_images
+            try:
+                for index in range(start_index, end_index):
+                    left_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-left'], index)
+                    right_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-right'], index)
+                    left_img = np.array(Image.fromarray(left_image_data[0].to_numpy_array()))
+                    right_img = np.array(Image.fromarray(right_image_data[0].to_numpy_array()))
+                    # print(f'slam storage size {sys.getsizeof(left_img.nbytes)}')
+                    # slam_img = Image.fromarray(left_img)
+                    # slam_img.save('sampledata/imagetesting/slam_left.png', format='PNG', compress_level=0)
+                    slam_left_images[slam_left_ts[index]] = left_img
+                    slam_right_images[slam_right_ts[index]] = right_img
+                    # break
 
-            print(f"Extracted {len(self.result['slam_left'])} images from {left_slam_label} stream")
-            print(f"Extracted {len(self.result['slam_right'])} images from {right_slam_label} stream")
-        except:
-            print("Error extracting slam images, likely not present in VRS file ")
+                self.result['slam_left'] = slam_left_images
+                self.result['slam_right'] = slam_right_images
+
+                print(f"Extracted {len(self.result['slam_left'])} images from {left_slam_label} stream")
+                print(f"Extracted {len(self.result['slam_right'])} images from {right_slam_label} stream")
+            except:
+                print("Error extracting slam images, likely not present in VRS file ")
     
     def preprocessing(self, image_data:list):
             

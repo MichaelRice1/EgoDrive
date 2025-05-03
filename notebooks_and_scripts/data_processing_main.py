@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from notebooks_and_scripts.vrs_extractor import VRSDataExtractor
 import numpy as np
 import tqdm
+import cv2
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
 
@@ -14,6 +15,48 @@ class DataProcessor:
     def __init__(self, base_data_path):
 
         self.path = base_data_path
+    
+    def yolo_frame_extraction(self, path, totalNumFrames = None):
+
+        names = [n for n in os.listdir(path) if n.endswith('.vrs')]
+        
+        npypaths = []
+        frame_output_path = 'sampledata/yolo/actualframes'
+
+
+        if totalNumFrames is None:
+            for name in names:
+                vrspath = os.path.join(path,name)
+                fname = name.split('.')[0]
+
+                vde = VRSDataExtractor(vrspath)
+                vde.get_image_data(rgb_flag=True)
+
+                output_path = os.path.join(path,'npyframes',(fname + '.npy'))
+                npypaths.append(output_path)
+                if not os.path.exists(output_path):
+                    vde.save_data(output_path)
+        
+            for i,p in enumerate(npypaths):
+                data = np.load(p,allow_pickle=True).item()
+                frames = data['rgb']
+                frames = list(frames.values())
+
+                filename = p.split('/')[-1].split('.')[0]
+
+                for j, frame in enumerate(tqdm.tqdm(frames, desc=f"Processing file {i+1}/{len(npypaths)}")):
+                    
+                    if not os.path.exists(os.path.join(frame_output_path,filename)):
+                        os.mkdir(os.path.join(frame_output_path,filename))
+                    
+                    output_filename = f"{frame_output_path}/{filename}/frame_{j:04d}.jpg"
+                    cv2.imwrite(output_filename, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                
+
+                
+            
+
+                    
         
 
     def annotating_run(self, path):
@@ -79,7 +122,8 @@ class DataProcessor:
 
     
 if __name__ == "__main__":
-    dp = DataProcessor('sampledata/driving_data/')
+    dp = DataProcessor('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/yolo')
+    dp.yolo_frame_extraction(dp.path)
     # dp.annotating_run(dp.path)
-    dp.blurring_run(dp.path)
+    # dp.blurring_run(dp.path)
 
