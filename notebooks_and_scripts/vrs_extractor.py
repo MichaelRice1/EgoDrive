@@ -47,6 +47,8 @@ class VRSDataExtractor():
     def __init__(self, vrs_path: str):
         self.path = vrs_path
         self.provider = data_provider.create_vrs_data_provider(self.path)
+        self.provider.set_devignetting(True)
+        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
 
         self.stream_mappings = {
             "camera-slam-left": StreamId("1201-1"),
@@ -114,16 +116,14 @@ class VRSDataExtractor():
 
         for index in tqdm.tqdm(range(start_index, end_index)):
             buffer = io.BytesIO()
-            image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)
             
-            self.provider.set_devignetting(True)
-            self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/other/devignetting_masks_bin')
+            image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)[0].to_numpy_array()
 
 
             # Convert to PIL Image, rotate, resize, and then convert back to numpy
-            image_pil = Image.fromarray(image_data[0].to_numpy_array())  # Convert to PIL Image
+            image_pil = Image.fromarray(image_data)  # Convert to PIL Image
             image_pil = image_pil.rotate(-90)  # Rotate counterclockwise 90 degrees
-            image_pil = image_pil.resize((640, 640)) 
+            #image_pil = image_pil.resize((640, 640)) 
 
             # Save to buffer (optional, only if needed)
             # image_pil.save(buffer, format="PNG")
@@ -131,7 +131,9 @@ class VRSDataExtractor():
             # Convert back to NumPy array
             img = np.array(image_pil)  # Convert back to NumPy array
 
+
             rgb_images[rgb_ts[index]] = img
+
 
             # print(f' original bytes {img.nbytes}' )
             # image = Image.fromarray(img)
