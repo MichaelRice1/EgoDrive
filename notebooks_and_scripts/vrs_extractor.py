@@ -17,7 +17,7 @@ from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 '''
-from projectaria_tools.core import data_provider
+from projectaria_tools.core import data_provider, calibration
 from projectaria_tools.core.image import InterpolationMethod
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
 from projectaria_tools.core.stream_id import StreamId
@@ -37,7 +37,7 @@ from projectaria_tools.core.calibration import (
 
 
 import sys
-sys.path.append('C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/notebooks_and_scripts')
+sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/unused/')
 from OtherModelScripts import ego_blur 
 
 
@@ -132,7 +132,12 @@ class VRSDataExtractor():
             img = np.array(image_pil)  # Convert back to NumPy array
 
 
-            rgb_images[rgb_ts[index]] = img
+            calib = self.provider.get_device_calibration().get_camera_calib('camera-rgb')
+            pinhole = calibration.get_linear_camera_calibration(512, 512, 170)
+            undistorted_image = calibration.distort_by_calibration(img, pinhole, calib)
+
+
+            rgb_images[rgb_ts[index]] = undistorted_image
 
 
             # print(f' original bytes {img.nbytes}' )
@@ -413,7 +418,6 @@ class VRSDataExtractor():
         Save the extracted data to the output path
         '''
 
-        pass
 
     def ego_blur(self, input_labels:str, frames):
 
@@ -562,11 +566,21 @@ class VRSDataExtractor():
         # observations_path = "/path/to/mps/output/trajectory/semidense_observations.csv.gz"
         # observations = mps.read_point_observations(observations_path)
 
-    def annotate(self, frames_dict, labels_csv, actions_csv, fps=15):
-        '''
-        Label RGB frames with face/license plate regions and driving actions.
-        Spacebar plays/pauses video playback at specified FPS (default: 30).
-        '''
+    def undistort_gaze(self,point_distorted_px, src_calib, dst_calib):
+
+        ray = src_calib.unproject(point_distorted_px)
+        point_undistorted = dst_calib.project(ray)
+        return point_undistorted
+    
+    def annotate(self, frames_dict, labels_csv, actions_csv, environment_csv, fps=15):
+        """
+        Annotate frames with:
+        - Blur labels (face, license plate)
+        - Driving actions
+        - Environment labels (rural, town, city, motorway)
+        """
+
+
         action_label_map = {
             '0': 'change gear',
             '1': 'turn steering wheel (two hands)',
@@ -581,8 +595,8 @@ class VRSDataExtractor():
             'q': 'toggle headlights',
             'w': 'toggle hazard lights',
             'e': 'interacting with radio',
-            'r': 'interacting with air conditioning',
-            't': 'putting on seatbelt',
+            'b': 'interacting with air conditioning',
+            'v': 'putting on seatbelt',
             'y': 'releasing hand brake',
             'u': 'deploying hand brake',
             'i': 'using mobile phone',
@@ -593,22 +607,35 @@ class VRSDataExtractor():
             'd': 'idle'
         }
 
-        # Key mappings (cross-platform)
+        environment_key_map = {
+            'r': 'rural',
+            't': 'town',
+            'c': 'city',
+            'm': 'motorway'
+        }
+
         LEFT_KEY = 63234 if os.name == 'posix' else 2424832
         RIGHT_KEY = 63235 if os.name == 'posix' else 2555904
         ESC_KEY = 27
-        EXIT_KEY = ord('x')  # Non-conflicting exit key
+        EXIT_KEY = ord('x')
         FRAME_INTERVAL = 1.0 / fps
 
         # Initialize CSVs
-        for csv_file, headers in [(labels_csv, ['start_frame', 'end_frame', 'type']), 
-                                (actions_csv, ['start_frame', 'end_frame', 'action'])]:
+        for csv_file, headers in [
+            (labels_csv, ['start_frame', 'end_frame', 'type']),
+            (actions_csv, ['start_frame', 'end_frame', 'action']),
+            (environment_csv, ['start_frame', 'end_frame', 'environment'])
+        ]:
             if not os.path.exists(csv_file):
                 with open(csv_file, 'w', newline='') as f:
                     csv.writer(f).writerow(headers)
 
         sorted_ts = sorted(frames_dict.keys())
         gaze_points = list(self.result['gaze'].values())
+        src_calib=calibration.get_linear_camera_calibration(1408, 1408, 608.611)
+        dst_calib=calibration.get_linear_camera_calibration(512, 512, 170)
+
+        undist_gaze = [self.undistort_gaze(gaze['projection'], src_calib, dst_calib) for gaze in gaze_points]
 
 
         if not sorted_ts:
@@ -619,115 +646,123 @@ class VRSDataExtractor():
         is_playing = False
         last_frame_time = time()
 
-        # State tracking
         active_blur_labels = {'face': None, 'license_plate': None}
         active_actions = {}
+
+        current_env_label = None
+        env_label_start_idx = None
 
         window_name = "Frame Labeler"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-        def write_blur_label(label_type, start_frame, end_frame):
-            with open(labels_csv, 'a', newline='') as f:
-                csv.writer(f).writerow([start_frame, end_frame, label_type])
-
-        def write_action(action_key, start_frame, end_frame):
-            with open(actions_csv, 'a', newline='') as f:
-                csv.writer(f).writerow([start_frame, end_frame, action_label_map[action_key]])
+        def write_csv_row(csv_file, row):
+            with open(csv_file, 'a', newline='') as f:
+                csv.writer(f).writerow(row)
 
         try:
             while True:
-                # Auto-advance playback
                 if is_playing:
-                    current_time = time()
-                    if current_time - last_frame_time >= FRAME_INTERVAL:
+                    now = time()
+                    if now - last_frame_time >= FRAME_INTERVAL:
                         new_idx = current_idx + 1
                         if new_idx < len(sorted_ts):
                             current_idx = new_idx
-                            last_frame_time = current_time
+                            last_frame_time = now
                         else:
-                            is_playing = False  # Stop at end
+                            is_playing = False
 
                 ts = sorted_ts[current_idx]
                 frame = frames_dict[ts].copy()
 
-                projection = gaze_points[current_idx]['projection'] / (1408/640)
+                projection = undist_gaze[current_idx]
                 depth = gaze_points[current_idx]['depth']
 
-    
-                # Display status
                 status = []
-                if is_playing: status.append(f"[PLAYING {fps}FPS]")
+                if is_playing:
+                    status.append(f"[PLAYING {fps}FPS]")
                 for label_type, start_frame in active_blur_labels.items():
-                    if start_frame is not None: status.append(f"{label_type.upper()}")
-                for action_key in active_actions: status.append(action_label_map[action_key])
-                
-                cv2.putText(frame, f"ACTIVE: {', '.join(status) or 'None'}", 
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(frame, f"Frame {current_idx+1}/{len(sorted_ts)} (X: exit, SPACE: play/pause)", 
-                        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                
+                    if start_frame is not None:
+                        status.append(label_type.upper())
+                for action_key in active_actions:
+                    status.append(action_label_map[action_key])
+                if current_env_label:
+                    status.append(f"ENV: {current_env_label}")
+
+                cv2.putText(frame, f"ACTIVE: {', '.join(status) or 'None'}",
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(frame, f"Frame {current_idx + 1}/{len(sorted_ts)} (X: exit, SPACE: play/pause)",
+                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
                 if projection is not None:
                     frame = cv2.circle(frame, (int(projection[0]), int(projection[1])), 6, (255, 0, 0), 3)
 
                 cv2.imshow(window_name, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 key = cv2.waitKeyEx(1)
 
-                # --- Key Handling ---
-                if key in (ESC_KEY, EXIT_KEY):  # Exit
+                if key in (ESC_KEY, EXIT_KEY):
                     break
 
-                # Navigation controls (override playback)
                 if key == LEFT_KEY:
                     current_idx = max(0, current_idx - 1)
                     is_playing = False
                 elif key == RIGHT_KEY:
-                    current_idx = min(len(sorted_ts)-1, current_idx + 1)
+                    current_idx = min(len(sorted_ts) - 1, current_idx + 1)
                     is_playing = False
-
-                # Play/pause toggle
                 elif key == 32:  # Space
                     is_playing = not is_playing
-                    last_frame_time = time()  # Reset timer for smooth playback
+                    last_frame_time = time()
 
-                # Blur labels
+                # Blur Labels
                 elif key in (ord('f'), ord('F')):
                     label_type = 'face'
                     if active_blur_labels[label_type] is None:
                         active_blur_labels[label_type] = current_idx
                     else:
-                        write_blur_label(label_type, active_blur_labels[label_type], current_idx)
+                        write_csv_row(labels_csv, [active_blur_labels[label_type], current_idx, label_type])
                         active_blur_labels[label_type] = None
-                
                 elif key in (ord('l'), ord('L')):
                     label_type = 'license_plate'
                     if active_blur_labels[label_type] is None:
                         active_blur_labels[label_type] = current_idx
                     else:
-                        write_blur_label(label_type, active_blur_labels[label_type], current_idx)
+                        write_csv_row(labels_csv, [active_blur_labels[label_type], current_idx, label_type])
                         active_blur_labels[label_type] = None
 
-                # Action keys
+                # Driving Actions
                 else:
                     try:
                         char_key = chr(key).lower()
                         if char_key in action_label_map:
-                            action_key = char_key
-                            if action_key in active_actions:
-                                write_action(action_key, active_actions[action_key], current_idx)
-                                del active_actions[action_key]
+                            if char_key in active_actions:
+                                write_csv_row(actions_csv, [active_actions[char_key], current_idx, action_label_map[char_key]])
+                                del active_actions[char_key]
                             else:
-                                active_actions[action_key] = current_idx
+                                active_actions[char_key] = current_idx
+
+                        # Environment Labels
+                        elif char_key in environment_key_map:
+                            new_label = environment_key_map[char_key]
+                            if new_label != current_env_label:
+                                if current_env_label is not None:
+                                    write_csv_row(environment_csv, [env_label_start_idx, current_idx - 1, current_env_label])
+                                current_env_label = new_label
+                                env_label_start_idx = current_idx
+
                     except ValueError:
                         pass
 
-        finally:
             # Final writes on exit
             for label_type, start_frame in active_blur_labels.items():
                 if start_frame is not None:
-                    write_blur_label(label_type, start_frame, current_idx)
+                    write_csv_row(labels_csv, [start_frame, current_idx, label_type])
             for action_key, start_frame in active_actions.items():
-                write_action(action_key, start_frame, current_idx)
+                write_csv_row(actions_csv, [start_frame, current_idx, action_label_map[action_key]])
+            if current_env_label is not None:
+                write_csv_row(environment_csv, [env_label_start_idx, current_idx, current_env_label])
+
+        finally:
             cv2.destroyAllWindows()
+
 
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
         """Records labels for all frames passed during advance"""

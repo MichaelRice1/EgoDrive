@@ -6,6 +6,9 @@ from notebooks_and_scripts.vrs_extractor import VRSDataExtractor
 import numpy as np
 import tqdm
 import cv2
+import csv
+from time import time
+
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
 
@@ -52,52 +55,29 @@ class DataProcessor:
                     output_filename = f"{frame_output_path}/{filename}/frame_{j:04d}.jpg"
                     cv2.imwrite(output_filename, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
                 
+    def annotating_run(self, path, start_frame, end_frame, et_scale = 2):
 
-                
-            
 
-                    
-        
-
-    def annotating_run(self, path):
-
-        names = sorted([p for p in os.listdir(path) if 'Store' not in p])
-
-        names = names[1:2]
-
-        start_index = 7300
-        end_index = 8300
+        names = sorted([p for p in os.listdir(path) if 'Store' or 'failed' not in p])
 
         for rec_name in names:
             vrs_path = os.path.join(path,rec_name,(rec_name + '.vrs'))
             vde = VRSDataExtractor(vrs_path)
+            vde.get_image_data(start_frame,end_frame)
+            gaze_path = os.path.join(path, rec_name, 'gaze1.csv')
+            hand_path = os.path.join(path, rec_name, 'wap1.csv')
 
-            vde.get_image_data(start_index,end_index)
-            # vde.videotest_mediapipe()
-            gaze_path = os.path.join(path, rec_name, 'general_eye_gaze.csv')
-            hand_path = os.path.join(path, rec_name, 'wrist_and_palm_poses.csv')
-            vde.get_gaze_hand(gaze_path, hand_path, start_index, end_index)
+            vde.get_gaze_hand(gaze_path, hand_path, start_frame*et_scale, end_frame*et_scale)
 
-            blur_csv_path = os.path.join(path,rec_name,(rec_name + '_blur.csv'))
-            actions_csv_path = os.path.join(path,rec_name,(rec_name + '_actions.csv'))
-            vde.annotate(vde.result['rgb'],blur_csv_path,actions_csv_path )
-
-            vde.get_IMU_data()
-
-            # vde.mediapipe_detection()
-
-            slam_path = os.path.join(path,rec_name,'slam')
-
-            if os.path.exists(slam_path):
-                vde.get_slam_data(slam_path)
-                vde.pc_filter(slam_path)
+            blur_csv_path = os.path.join(path,rec_name,(rec_name + f'_{start_frame}blur.csv'))
+            actions_csv_path = os.path.join(path,rec_name,(rec_name + f'_{start_frame}actions.csv'))
+            environment_csv_path = os.path.join(path,rec_name,(rec_name + f'_{start_frame}frame_verification1.csv'))
 
 
-            output_path = os.path.join(path,rec_name,(rec_name + '.npy'))
-            vde.save_data(output_path)
+            vde.annotate(vde.result['rgb'],blur_csv_path,actions_csv_path, environment_csv_path)
+
 
             break
-
 
     def blurring_run(self, path):
 
@@ -120,10 +100,39 @@ class DataProcessor:
 
             np.save(os.path.join(path,rec_name,(rec_name + '.npy')), curr_res)
 
+    def verification_and_splitting(self, path):
+
+        names = sorted([p for p in os.listdir(path) if 'failed' not in p])
+        
+
+        for rec_name in names:
+            vrs_path = os.path.join(path,rec_name,(rec_name + '.vrs'))
+            vde = VRSDataExtractor(vrs_path)
+            vde.get_image_data(0,5000)
+
+            gaze_path = os.path.join(path, rec_name, 'gaze1.csv')
+            hand_path = os.path.join(path, rec_name, 'wap1.csv')
+            vde.get_gaze_hand(gaze_path, hand_path, 0, 10000)
+
+            csv_path = os.path.join(path,rec_name,(rec_name + '_frame_verification1.csv'))
+
+            self.annotate_environment(vde.result['rgb'],csv_path)
+
+
+
+            break
     
+      
+
+
+        
 if __name__ == "__main__":
     dp = DataProcessor('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/yolo')
-    dp.yolo_frame_extraction(dp.path)
-    # dp.annotating_run(dp.path)
+
     # dp.blurring_run(dp.path)
+    # dp.yolo_frame_extraction(dp.path)
+
+    verification_path = os.path.join('/Volumes/MichaelSSD/dataset/realdata')
+
+    dp.annotating_run(verification_path,0,100)
 
