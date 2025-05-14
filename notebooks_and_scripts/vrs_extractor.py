@@ -159,8 +159,7 @@ class VRSDataExtractor():
 
         if not rgb_flag:
             for index in range(start_index, end_index):
-                image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)
-                img = np.array(Image.fromarray(image_data[0].to_numpy_array()))
+                image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)[0].to_numpy_array()
                 et_images[et_ts[index]] = img
                 # break
                 

@@ -100,29 +100,22 @@ class DataProcessor:
 
             np.save(os.path.join(path,rec_name,(rec_name + '.npy')), curr_res)
 
-    def verification_and_splitting(self, path):
+    def vrs_processing(self, path):
 
-        names = sorted([p for p in os.listdir(path) if 'failed' not in p])
-        
+        vde = VRSDataExtractor(path)
+        vde.get_image_data(rgb_flag=True)
 
-        for rec_name in names:
-            vrs_path = os.path.join(path,rec_name,(rec_name + '.vrs'))
-            vde = VRSDataExtractor(vrs_path)
-            vde.get_image_data(0,5000)
+        # gaze_path = os.path.join(path, , 'gaze1.csv')
+        # hand_path = os.path.join(path, rec_name, 'wap1.csv')
+        # vde.get_gaze_hand(gaze_path, hand_path, start_frame*et_scale, end_frame*et_scale)
 
-            gaze_path = os.path.join(path, rec_name, 'gaze1.csv')
-            hand_path = os.path.join(path, rec_name, 'wap1.csv')
-            vde.get_gaze_hand(gaze_path, hand_path, 0, 10000)
+        vde.get_slam_data(slam_path='/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/slamtest/mps_SlamTest_vrs/slam')
+        vde.get_IMU_data()
 
-            csv_path = os.path.join(path,rec_name,(rec_name + '_frame_verification1.csv'))
+        output_path = os.path.join(path, 'SlamTest')
 
-            self.annotate_environment(vde.result['rgb'],csv_path)
-
-
-
-            break
-    
-      
+        print(output_path)
+        vde.save_data(path)
 
 
         
@@ -132,7 +125,8 @@ if __name__ == "__main__":
     # dp.blurring_run(dp.path)
     # dp.yolo_frame_extraction(dp.path)
 
-    verification_path = os.path.join('/Volumes/MichaelSSD/dataset/realdata')
+    # verification_path = os.path.join('/Volumes/MichaelSSD/dataset/realdata')
+    # dp.annotating_run(verification_path,0,100)
 
-    dp.annotating_run(verification_path,0,100)
+    dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/slamtest/SlamTest.vrs')
 
