@@ -417,6 +417,34 @@ class VRSDataExtractor():
         Save the extracted data to the output path
         '''
 
+    def get_GPS_data(self, start_index=0, end_index=None):
+
+        num_gps = self.provider.get_num_data(self.provider.get_stream_id_from_label('gps'))
+        gps_ts = self.provider.get_timestamps_ns(self.stream_mappings['gps'], self.time_domain)
+
+        if end_index is None:
+            end_index = num_gps
+
+        gps_data = {}
+        for index in range(start_index, end_index):
+            gps_point = self.provider.get_gps_data_by_index(self.stream_mappings['gps'], index)
+
+            p = {
+                    "accuracy": gps_point.accuracy,
+                    "altitude": gps_point.altitude,
+                    "capture_timestamp_ns": gps_point.capture_timestamp_ns,
+                    "latitude": gps_point.latitude,
+                    "longitude": gps_point.longitude,
+                    "provider": gps_point.provider,
+                    "raw_data": gps_point.raw_data,
+                    "speed": gps_point.speed,
+                    "utc_time_ms": gps_point.utc_time_ms,
+                    "verticalAccuracy": gps_point.verticalAccuracy,
+                }
+            gps_data[gps_ts[index]] = p
+        
+        self.result['gps'] = gps_data
+
 
     def ego_blur(self, input_labels:str, frames):
 
