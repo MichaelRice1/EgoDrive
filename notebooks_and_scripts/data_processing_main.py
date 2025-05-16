@@ -105,16 +105,17 @@ class DataProcessor:
         vde = VRSDataExtractor(path)
         # vde.get_GPS_data()
 
-        vde.get_image_data(start_index=0,end_index=5000,rgb_flag=True)
+        vde.get_image_data(start_index=0,end_index=100,rgb_flag=True)
 
-        # gaze_path = os.path.join(path, , 'gaze1.csv')
-        # hand_path = os.path.join(path, rec_name, 'wap1.csv')
-        # vde.get_gaze_hand(gaze_path, hand_path, start_frame*et_scale, end_frame*et_scale)
+
 
         split = path.split('/')[:-1]
         output_path = os.path.join('/',*split, path.split('/')[-1].split('.')[0] + '.npy')
 
         slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam')
+        gaze_path = os.path.join('/',*split, 'gaze1.csv')
+        hand_path = os.path.join('/',*split, 'wap1.csv')
+        vde.get_gaze_hand(gaze_path, hand_path)
 
 
         # vde.get_slam_data(slam_path)
@@ -134,5 +135,5 @@ if __name__ == "__main__":
     # verification_path = os.path.join('/Volumes/MichaelSSD/dataset/realdata')
     # dp.annotating_run(verification_path,0,100)
 
-    dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/2/Town_Sunny.vrs')
+    dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/1/1.vrs')
 
