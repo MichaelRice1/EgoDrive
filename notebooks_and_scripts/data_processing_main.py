@@ -15,7 +15,7 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 # egoblur appears to work but should be fully checked with better data 
 class DataProcessor:
 
-    def __init__(self, base_data_path):
+    def __init__(self, base_data_path = None):
 
         self.path = base_data_path
     
@@ -121,8 +121,8 @@ class DataProcessor:
         # # vde.get_slam_data(slam_path)
         # vde.get_IMU_data()
 
-        
         vde.save_data(output_path)
+        return vde.result
 
 
         
@@ -135,6 +135,6 @@ if __name__ == "__main__":
     # verification_path = os.path.join('/Volumes/MichaelSSD/dataset/realdata')
     # dp.annotating_run(verification_path,0,100)
 
-    dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/1/1.vrs',start_frame=50,end_frame=150)
+    # dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/1/1.vrs',start_frame=50,end_frame=150)
 
 
