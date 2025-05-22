@@ -123,7 +123,7 @@ class VRSDataExtractor():
             # Convert to PIL Image, rotate, resize, and then convert back to numpy
             image_pil = Image.fromarray(image_data)  # Convert to PIL Image
             image_pil = image_pil.rotate(-90)  # Rotate counterclockwise 90 degrees
-            #image_pil = image_pil.resize((640, 640)) 
+            image_pil = image_pil.resize((512, 512)) 
 
             # Save to buffer (optional, only if needed)
             # image_pil.save(buffer, format="PNG")
@@ -132,12 +132,12 @@ class VRSDataExtractor():
             img = np.array(image_pil)  # Convert back to NumPy array
 
 
-            calib = self.provider.get_device_calibration().get_camera_calib('camera-rgb')
-            pinhole = calibration.get_linear_camera_calibration(512, 512, 170)
-            undistorted_image = calibration.distort_by_calibration(img, pinhole, calib)
+            # calib = self.provider.get_device_calibration().get_camera_calib('camera-rgb')
+            # pinhole = calibration.get_linear_camera_calibration(512, 512, 170)
+            # undistorted_image = calibration.distort_by_calibration(img, pinhole, calib)
 
 
-            rgb_images[rgb_ts[index]] = undistorted_image
+            rgb_images[rgb_ts[index]] = img
 
 
             # print(f' original bytes {img.nbytes}' )
