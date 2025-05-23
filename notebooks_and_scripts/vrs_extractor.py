@@ -34,7 +34,7 @@ from projectaria_tools.core.calibration import (
     distort_by_calibration,
     get_linear_camera_calibration,
 )
-
+os.environ['YOLO_VERBOSE'] = 'False'
 
 import sys
 sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/unused/')
@@ -69,6 +69,8 @@ class VRSDataExtractor():
         self.face_ego_blur = "models/ego_blur_face.jit"
         self.lp_ego_blur = "models/ego_blur_lp.jit"
         self.mp_hand_landmarker_task_path = 'C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/other/hand_landmarker.task'
+        rgblabel = 'camera-rgb'
+        self.num_frames_rgb = self.provider.get_num_data(self.provider.get_stream_id_from_label(rgblabel))
 
     def get_device(self) -> str:
         """
@@ -599,7 +601,7 @@ class VRSDataExtractor():
         point_undistorted = dst_calib.project(ray)
         return point_undistorted
     
-    def annotate(self, frames_dict, labels_csv, actions_csv, environment_csv, fps=15):
+    def annotate(self, frames_dict, actions_csv, fps=15):
         """
         Annotate frames with:
         - Blur labels (face, license plate)
@@ -607,38 +609,11 @@ class VRSDataExtractor():
         - Environment labels (rural, town, city, motorway)
         """
 
-
         action_label_map = {
-            '0': 'change gear',
-            '1': 'turn steering wheel (two hands)',
-            '2': 'turn steering wheel (one hand)',
-            '3': 'toggling indicator',
-            '4': 'checking left wing mirror',
-            '5': 'checking right wing mirror',
-            '6': 'checking rear view mirror',
-            '7': 'checking left blind spot',
-            '8': 'checking right blind spot',
-            '9': 'adjusting wipers',
-            'q': 'toggle headlights',
-            'w': 'toggle hazard lights',
-            'e': 'interacting with radio',
-            'b': 'interacting with air conditioning',
-            'v': 'putting on seatbelt',
-            'y': 'releasing hand brake',
-            'u': 'deploying hand brake',
-            'i': 'using mobile phone',
-            'o': 'eating/drinking',
-            'p': 'looking in vanity mirror',
-            'a': 'checking speedometer / fuel gauge',
-            's': 'checking navigation system',
-            'd': 'idle'
-        }
-
-        environment_key_map = {
-            'r': 'rural',
-            't': 'town',
-            'c': 'city',
-            'm': 'motorway'
+            '0': 'checking left wing mirror',
+            '1': 'checking right wing mirror',
+            '2': 'checking rear view mirror',
+            '3': 'nothing'
         }
 
         LEFT_KEY = 63234 if os.name == 'posix' else 2424832
@@ -649,21 +624,28 @@ class VRSDataExtractor():
 
         # Initialize CSVs
         for csv_file, headers in [
-            (labels_csv, ['start_frame', 'end_frame', 'type']),
-            (actions_csv, ['start_frame', 'end_frame', 'action']),
-            (environment_csv, ['start_frame', 'end_frame', 'environment'])
+            (actions_csv, ['start_frame', 'end_frame', 'action'])
         ]:
             if not os.path.exists(csv_file):
                 with open(csv_file, 'w', newline='') as f:
                     csv.writer(f).writerow(headers)
 
+        # Load existing actions
+        existing_actions = []
+        if os.path.exists(actions_csv):
+            with open(actions_csv, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    existing_actions.append({
+                        'start': int(row['start_frame']),
+                        'end': int(row['end_frame']),
+                        'action': row['action']
+                    })
+
         sorted_ts = sorted(frames_dict.keys())
         gaze_points = list(self.result['gaze'].values())
-        src_calib=calibration.get_linear_camera_calibration(1408, 1408, 608.611)
-        dst_calib=calibration.get_linear_camera_calibration(512, 512, 170)
-
-        undist_gaze = [self.undistort_gaze(gaze['projection'], src_calib, dst_calib) for gaze in gaze_points]
-
+        src_calib = calibration.get_linear_camera_calibration(1408, 1408, 608.611)
+        dst_calib = calibration.get_linear_camera_calibration(512, 512, 170)
 
         if not sorted_ts:
             print("No frames to label!")
@@ -673,7 +655,6 @@ class VRSDataExtractor():
         is_playing = False
         last_frame_time = time()
 
-        active_blur_labels = {'face': None, 'license_plate': None}
         active_actions = {}
 
         current_env_label = None
@@ -701,19 +682,23 @@ class VRSDataExtractor():
                 ts = sorted_ts[current_idx]
                 frame = frames_dict[ts].copy()
 
-                projection = undist_gaze[current_idx]
+                projection = gaze_points[current_idx]['projection'] * (512 / 1408)
                 depth = gaze_points[current_idx]['depth']
+
+                # Check existing labels
+                active_csv_actions = [
+                    entry['action'] for entry in existing_actions
+                    if entry['start'] <= current_idx <= entry['end']
+                ]
 
                 status = []
                 if is_playing:
                     status.append(f"[PLAYING {fps}FPS]")
-                for label_type, start_frame in active_blur_labels.items():
-                    if start_frame is not None:
-                        status.append(label_type.upper())
                 for action_key in active_actions:
                     status.append(action_label_map[action_key])
-                if current_env_label:
-                    status.append(f"ENV: {current_env_label}")
+                for act in active_csv_actions:
+                    if act not in status:
+                        status.append(act)
 
                 cv2.putText(frame, f"ACTIVE: {', '.join(status) or 'None'}",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -739,23 +724,6 @@ class VRSDataExtractor():
                     is_playing = not is_playing
                     last_frame_time = time()
 
-                # Blur Labels
-                elif key in (ord('f'), ord('F')):
-                    label_type = 'face'
-                    if active_blur_labels[label_type] is None:
-                        active_blur_labels[label_type] = current_idx
-                    else:
-                        write_csv_row(labels_csv, [active_blur_labels[label_type], current_idx, label_type])
-                        active_blur_labels[label_type] = None
-                elif key in (ord('l'), ord('L')):
-                    label_type = 'license_plate'
-                    if active_blur_labels[label_type] is None:
-                        active_blur_labels[label_type] = current_idx
-                    else:
-                        write_csv_row(labels_csv, [active_blur_labels[label_type], current_idx, label_type])
-                        active_blur_labels[label_type] = None
-
-                # Driving Actions
                 else:
                     try:
                         char_key = chr(key).lower()
@@ -765,30 +733,16 @@ class VRSDataExtractor():
                                 del active_actions[char_key]
                             else:
                                 active_actions[char_key] = current_idx
-
-                        # Environment Labels
-                        elif char_key in environment_key_map:
-                            new_label = environment_key_map[char_key]
-                            if new_label != current_env_label:
-                                if current_env_label is not None:
-                                    write_csv_row(environment_csv, [env_label_start_idx, current_idx - 1, current_env_label])
-                                current_env_label = new_label
-                                env_label_start_idx = current_idx
-
                     except ValueError:
                         pass
 
             # Final writes on exit
-            for label_type, start_frame in active_blur_labels.items():
-                if start_frame is not None:
-                    write_csv_row(labels_csv, [start_frame, current_idx, label_type])
             for action_key, start_frame in active_actions.items():
                 write_csv_row(actions_csv, [start_frame, current_idx, action_label_map[action_key]])
-            if current_env_label is not None:
-                write_csv_row(environment_csv, [env_label_start_idx, current_idx, current_env_label])
 
         finally:
             cv2.destroyAllWindows()
+
 
 
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
@@ -817,14 +771,34 @@ class VRSDataExtractor():
         Get automotive object detection results from the VRS file
         '''
 
-        classes = ['left hand','right hand','gear stick','steering wheel',
-                   'stalk','left wing mirror','right wing mirror',
-                   'rear view mirror','infotainment centre','hand brake', 
-                   'mobile phone', 'dashboard', 'vanity mirror','navigation system']
-        
+        classes = {0: 'Gear Stick', 1: 'Left Wing Mirror', 2: 'Rearview Mirror', 3: 'Right Wing Mirror', 4: 'Steering Wheel'}        
+        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/train/weights/best.pt'
+        model = YOLO(model_weight_path)
+        results = []
+
+
 
         for image in self.result['rgb'].values():
-            pass
+
+            result = model(image, verbose=False)
+            image = []
+            if result[0].boxes is None:
+                ind = {}
+                results.append(ind)
+            
+            for i in range(len(result[0].boxes.xyxy)):
+                ind = {}
+                if result[0].boxes.conf[i] > 0.4:
+                    ind = {
+                        'class': classes[int(result[0].boxes.cls[i])],
+                        'confidence': result[0].boxes.conf[i],
+                        'bounding_box': result[0].boxes.xyxy[i]
+                    }
+                    image.append(ind)
+
+            results.append(image)
+            
+        self.result['object_detections'] = results
     
     def heatmaps(self, frames, gazes):
         '''

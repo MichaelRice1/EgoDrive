@@ -1,3 +1,4 @@
+
 import os 
 import sys
 import matplotlib.pyplot as plt
@@ -100,28 +101,38 @@ class DataProcessor:
 
             np.save(os.path.join(path,rec_name,(rec_name + '.npy')), curr_res)
 
-    def vrs_processing(self, path, start_frame = None, end_frame = None): 
+    def vrs_processing(self, path, start_frame = None, end_frame = None, annotate = False): 
 
         vde = VRSDataExtractor(path)
         # vde.get_GPS_data()
+        if start_frame is None or end_frame is None:
+            start_frame = 0
+            end_frame = vde.num_frames_rgb
 
         vde.get_image_data(start_index=start_frame,end_index=end_frame ,rgb_flag=True)
-
-
-
         split = path.split('/')[:-1]
         output_path = os.path.join('/',*split, path.split('/')[-1].split('.')[0] + '.npy')
-
-        # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam')
         gaze_path = os.path.join('/',*split, 'gaze1.csv')
         hand_path = os.path.join('/',*split, 'wap1.csv')
         vde.get_gaze_hand(gaze_path, hand_path)
 
 
-        # # vde.get_slam_data(slam_path)
-        # vde.get_IMU_data()
+        # # # vde.get_slam_data(slam_path)
+        vde.get_IMU_data()
+        
+        if annotate:
+            vde.annotate(vde.result['rgb'],'actions.csv')
 
-        vde.save_data(output_path)
+        vde.get_object_dets()
+
+
+
+        
+
+        # # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam')
+        
+
+        # vde.save_data(output_path)
         return vde.result
 
 
@@ -135,6 +146,6 @@ if __name__ == "__main__":
     # verification_path = os.path.join('/Volumes/MichaelSSD/dataset/realdata')
     # dp.annotating_run(verification_path,0,100)
 
-    # dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/1/1.vrs',start_frame=50,end_frame=150)
+    dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/1/1.vrs',start_frame=50,end_frame=150)
 
 
