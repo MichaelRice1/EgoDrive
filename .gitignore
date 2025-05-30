@@ -6,3 +6,5 @@ other
 projectaria_tools
 runs
 notebooks_and_scripts/model_testing/models
+utilities
+notebooks_and_scripts/model_testing/perception_models
