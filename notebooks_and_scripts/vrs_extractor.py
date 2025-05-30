@@ -47,8 +47,8 @@ class VRSDataExtractor():
     def __init__(self, vrs_path: str):
         self.path = vrs_path
         self.provider = data_provider.create_vrs_data_provider(self.path)
-        self.provider.set_devignetting(True)
-        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
+        # self.provider.set_devignetting(True)
+        # self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
 
         self.stream_mappings = {
             "camera-slam-left": StreamId("1201-1"),
@@ -64,7 +64,13 @@ class VRSDataExtractor():
 
         self.time_domain = TimeDomain.DEVICE_TIME  # query data based on host time
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
-        self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
+        self.provider.set_devignetting(True)
+        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
+        
+        try:
+            self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
+        except:
+            self.rgb_start_time = 0
         self.result = {}
         self.face_ego_blur = "models/ego_blur_face.jit"
         self.lp_ego_blur = "models/ego_blur_lp.jit"
@@ -353,7 +359,6 @@ class VRSDataExtractor():
 
         self.result['closed_loop'] = closed_loop_points
 
-    #TODO - stop this from loading objects
     def get_IMU_data(self, start_index=0, end_index=None):
 
         '''
@@ -379,29 +384,28 @@ class VRSDataExtractor():
 
         for ind in range(start_index, end_index):
             imu_right_point = self.provider.get_imu_data_by_index(self.stream_mappings['imu-right'], ind)
-            right_data = {
-                    "accel_msec2": imu_right_point.accel_msec2,
-                    "accel_valid": imu_right_point.accel_valid,
-                    "capture_timestamp_ns": imu_right_point.capture_timestamp_ns,
-                    "gyro_radsec": imu_right_point.gyro_radsec,
-                    "gyro_valid": imu_right_point.gyro_valid,
-                    "mag_tesla": imu_right_point.mag_tesla,
-                    "mag_valid": imu_right_point.mag_valid,
-                    "temperature": imu_right_point.temperature,
-                }
+            right_data = [ imu_right_point.accel_msec2[0],
+                            imu_right_point.accel_msec2[1],
+                            imu_right_point.accel_msec2[2],
+                            imu_right_point.gyro_radsec[0],
+                            imu_right_point.gyro_radsec[1],
+                            imu_right_point.gyro_radsec[2],
+                            imu_right_point.mag_tesla[0],
+                            imu_right_point.mag_tesla[1],
+                            imu_right_point.mag_tesla[2]]
 
             if ind < num_data_imu_left:
                 imu_left_point = self.provider.get_imu_data_by_index(self.stream_mappings['imu-left'], ind)
-                left_data = {
-                    "accel_msec2": imu_left_point.accel_msec2,
-                    "accel_valid": imu_left_point.accel_valid,
-                    "capture_timestamp_ns": imu_left_point.capture_timestamp_ns,
-                    "gyro_radsec": imu_left_point.gyro_radsec,
-                    "gyro_valid": imu_left_point.gyro_valid,
-                    "mag_tesla": imu_left_point.mag_tesla,
-                    "mag_valid": imu_left_point.mag_valid,
-                    "temperature": imu_left_point.temperature,
-                }
+                left_data = [ imu_left_point.accel_msec2[0], 
+                            imu_left_point.accel_msec2[1],
+                            imu_left_point.accel_msec2[2],
+                            imu_left_point.gyro_radsec[0],
+                            imu_left_point.gyro_radsec[1],
+                            imu_left_point.gyro_radsec[2],
+                            imu_left_point.mag_tesla[0],
+                            imu_left_point.mag_tesla[1],
+                            imu_left_point.mag_tesla[2]]
+                             
 
                 imu_left[imu_left_ts[ind]] = left_data
                 

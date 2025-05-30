@@ -9,8 +9,6 @@ import tqdm
 import cv2
 import csv
 from time import time
-
-
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
 
 # egoblur appears to work but should be fully checked with better data 
@@ -116,6 +114,7 @@ class DataProcessor:
         hand_path = os.path.join('/',*split, 'wap1.csv')
         vde.get_gaze_hand(gaze_path, hand_path)
 
+        # vde.get_GPS_data()
 
         # # # vde.get_slam_data(slam_path)
         vde.get_IMU_data()
@@ -126,13 +125,9 @@ class DataProcessor:
         vde.get_object_dets()
 
 
+        # # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'
 
-        
-
-        # # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam')
-        
-
-        # vde.save_data(output_path)
+        vde.save_data(output_path)
         return vde.result
 
 
@@ -146,6 +141,6 @@ if __name__ == "__main__":
     # verification_path = os.path.join('/Volumes/MichaelSSD/dataset/realdata')
     # dp.annotating_run(verification_path,0,100)
 
-    dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/1/1.vrs',start_frame=50,end_frame=150)
+    dp.vrs_processing('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/sampledata/proper_cartesting/1/1.vrs')
 
 
