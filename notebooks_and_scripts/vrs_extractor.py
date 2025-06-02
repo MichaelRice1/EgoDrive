@@ -1,6 +1,6 @@
+
 import os
 import numpy as np
-from matplotlib import pyplot as plt
 from PIL import Image
 import torch
 import cv2
@@ -11,6 +11,8 @@ import tqdm
 import io
 from ultralytics import YOLO
 from typing import Dict, List, Optional
+from filterpy.kalman import KalmanFilter
+
 '''
 import mediapipe as mp
 from mediapipe import solutions
@@ -19,7 +21,6 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 '''
 from projectaria_tools.core import data_provider, calibration
-from projectaria_tools.core.image import InterpolationMethod
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
 from projectaria_tools.core.stream_id import StreamId
 import projectaria_tools.core.mps as mps
@@ -36,7 +37,6 @@ from projectaria_tools.core.calibration import (
     distort_by_calibration,
     get_linear_camera_calibration,
 )
-from filterpy.kalman import KalmanFilter
 os.environ['YOLO_VERBOSE'] = 'False'
 
 import sys
@@ -53,8 +53,10 @@ class VRSDataExtractor():
         
         self.time_domain = TimeDomain.DEVICE_TIME  # query data based on host time
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
+        
         self.provider.set_devignetting(True)
         self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
+        
         self.device_calibration = self.provider.get_device_calibration()
 
         
@@ -110,7 +112,23 @@ class VRSDataExtractor():
             else f"cuda:{torch.cuda.current_device()}"
         )
     
-    def get_image_data(self, start_index=0, end_index=None, rgb_flag = False):
+    def crop_largest_square_inside_circle(self, image):
+
+        """
+        Crops the largest square from a circular image centered in a square frame.
+        """
+
+        assert image.shape[0] == image.shape[1], "Image must be square"
+        size = image.shape[0]
+        
+        # Compute side of largest inscribed square
+        side = int(size / np.sqrt(2))
+        
+        # Compute starting point to crop centered
+        offset = (size - side) // 2
+        return image[offset:offset+side, offset:offset+side]
+    
+    def get_image_data(self, start_index=0, end_index=None, rgb_flag = False, progress_callback=None):
 
         '''
         Extracts frames from the VRS file based on the index/time domain. The frames are extracted from the following streams:
@@ -144,15 +162,12 @@ class VRSDataExtractor():
             end_index = num_frames_rgb
 
 
-        for index in tqdm.tqdm(range(start_index, end_index)):
-            buffer = io.BytesIO()
-            
+        for i,index in enumerate(tqdm.tqdm(range(start_index, end_index), desc= "Extracting Images")):
+            # buffer = io.BytesIO()
+
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)[0].to_numpy_array()
-
-
-            # Convert to PIL Image, rotate, resize, and then convert back to numpy
-            image_pil = Image.fromarray(image_data)  # Convert to PIL Image
-            image_pil = image_pil.rotate(-90)  # Rotate counterclockwise 90 degrees
+            image_pil = Image.fromarray(image_data)  
+            image_pil = image_pil.rotate(-90) 
             image_pil = image_pil.resize((512, 512)) 
 
             # Save to buffer (optional, only if needed)
@@ -162,27 +177,22 @@ class VRSDataExtractor():
             img = np.array(image_pil)  # Convert back to NumPy array
 
 
+            ## removing circular mask
+            # square_crop = self.crop_largest_square_inside_circle(img)
+
+
+            ## undistorting the images
             # calib = self.provider.get_device_calibration().get_camera_calib('camera-rgb')
             # pinhole = calibration.get_linear_camera_calibration(512, 512, 170)
             # undistorted_image = calibration.distort_by_calibration(img, pinhole, calib)
+            # Call progress update
+
+            if progress_callback:
+                progress_callback(i + 1, end_index - start_index)
 
 
             rgb_images[rgb_ts[index]] = img
 
-
-            # print(f' original bytes {img.nbytes}' )
-            # image = Image.fromarray(img)
-            # # Save the image to disk
-            # image.save('sampledata/imagetesting/pngfull.png', format='PNG', compress_level=0)
-
-            # pimg = Image.fromarray(img)
-            # pimg.save(buffer, format="PNG")
-            # png_bytes = buffer.getvalue()
-            # print(f'rgb storage size {sys.getsizeof(png_bytes)}')
-            # resized_img = pimg.resize((512, 512))
-            # resized_img.save('sampledata/imagetesting/pngresized.png', format='PNG', compress_level=9)
-
-            # break
 
         self.result['rgb'] = rgb_images
         print(f"Extracted {len(self.result['rgb'])} images from {rgblabel} stream")
@@ -241,7 +251,7 @@ class VRSDataExtractor():
 
         return kf
     
-    def get_gaze_data(self, gaze_path:str, start_index=0, end_index=None):
+    def get_gaze_data(self, gaze_path:str,personalized_gaze_path=None, start_index=0, end_index=None):
 
         '''
         Extracts eyegaze points from the VRS file based on the index/time domain. The eyegaze points are extracted from the following streams:
@@ -253,19 +263,22 @@ class VRSDataExtractor():
         
 
         gaze_cpf = mps.read_eyegaze(gaze_path)
+        if personalized_gaze_path:
+            personalized_gaze_cpf = mps.read_eyegaze(personalized_gaze_path)
         # handwrist_points  = mps.hand_tracking.read_wrist_and_palm_poses(hand_path)
         
 
         if start_index == 0 and end_index == None:
             num_et = len(gaze_cpf)
-            # num_hw = len(handwrist_points)
             et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_et)]
-            # hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_hw)]
+            if personalized_gaze_path:
+                p_et_ts = [personalized_gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_et)]
         else:
             et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
+            if personalized_gaze_path:
+                p_et_ts = [personalized_gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
             #hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
 
-        print(f'length of eye tracking tiemstamps {len(et_ts)}')
 
         for ts in et_ts:
             gaze_point = get_nearest_eye_gaze(gaze_cpf, ts)
@@ -290,10 +303,39 @@ class VRSDataExtractor():
                 }
         self.result['gaze'] = gaze_points
 
+        p_gaze_points = {}
+        # Process personalized gaze data
+        if personalized_gaze_path:
+            for ts in p_et_ts:
+                personalized_gaze_point = get_nearest_eye_gaze(personalized_gaze_cpf, ts)
+
+                if personalized_gaze_point is not None:
+
+                    rgb_stream_label = self.provider.get_label_from_stream_id(self.stream_mappings['camera-rgb'])
+                    device_calibration = self.provider.get_device_calibration()
+                    rgb_camera_calibration = device_calibration.get_camera_calib(rgb_stream_label)
+
+                    gaze_projection = get_gaze_vector_reprojection(
+                            personalized_gaze_point,
+                            rgb_stream_label,
+                            device_calibration,
+                            rgb_camera_calibration,
+                            depth_m=personalized_gaze_point.depth
+                        )
+                    
+                    p_gaze_points[ts] = {
+                        "projection": gaze_projection,
+                        'depth': personalized_gaze_point.depth,
+                    }
+
+        self.result['personalized_gaze'] = p_gaze_points
+
+        if personalized_gaze_path:
+            gaze = list(p_gaze_points.values())
+        else:
+            gaze = list(gaze_points.values())
 
         smoothed_gaze = []
-
-        gaze = list(gaze_points.values())
         gaze = [g['projection']*(512/1408) for g in gaze]
 
         kf = self.create_kalman_filter()
@@ -336,23 +378,23 @@ class VRSDataExtractor():
         
         if hand_tracking_result.left_hand:
             left_landmarks = [
-                self.get_point_reprojection(landmark, key)
+                self.get_hand_point_reprojection(landmark, key)
                 for landmark in hand_tracking_result.left_hand.landmark_positions_device
             ]
-            left_wrist = self.get_point_reprojection(
+            left_wrist = self.get_hand_point_reprojection(
                 hand_tracking_result.left_hand.landmark_positions_device[
                     int(mps.hand_tracking.HandLandmark.WRIST)
                 ],
                 key,
             )
-            left_palm = self.get_point_reprojection(
+            left_palm = self.get_hand_point_reprojection(
                 hand_tracking_result.left_hand.landmark_positions_device[
                     int(mps.hand_tracking.HandLandmark.PALM_CENTER)
                 ],
                 key,
             )
             if hand_tracking_result.left_hand.wrist_and_palm_normal_device is not None:
-                left_wrist_normal_tip = self.get_point_reprojection(
+                left_wrist_normal_tip = self.get_hand_point_reprojection(
                     hand_tracking_result.left_hand.landmark_positions_device[
                         int(mps.hand_tracking.HandLandmark.WRIST)
                     ]
@@ -360,7 +402,7 @@ class VRSDataExtractor():
                     * NORMAL_VIS_LEN,
                     key,
                 )
-                left_palm_normal_tip = self.get_point_reprojection(
+                left_palm_normal_tip = self.get_hand_point_reprojection(
                     hand_tracking_result.left_hand.landmark_positions_device[
                         int(mps.hand_tracking.HandLandmark.PALM_CENTER)
                     ]
@@ -370,23 +412,23 @@ class VRSDataExtractor():
                 )
         if hand_tracking_result.right_hand:
             right_landmarks = [
-                self.get_point_reprojection(landmark, key)
+                self.get_hand_point_reprojection(landmark, key)
                 for landmark in hand_tracking_result.right_hand.landmark_positions_device
             ]
-            right_wrist = self.get_point_reprojection(
+            right_wrist = self.get_hand_point_reprojection(
                 hand_tracking_result.right_hand.landmark_positions_device[
                     int(mps.hand_tracking.HandLandmark.WRIST)
                 ],
                 key,
             )
-            right_palm = self.get_point_reprojection(
+            right_palm = self.get_hand_point_reprojection(
                 hand_tracking_result.right_hand.landmark_positions_device[
                     int(mps.hand_tracking.HandLandmark.PALM_CENTER)
                 ],
                 key,
             )
             if hand_tracking_result.right_hand.wrist_and_palm_normal_device is not None:
-                right_wrist_normal_tip = self.get_point_reprojection(
+                right_wrist_normal_tip = self.get_hand_point_reprojection(
                     hand_tracking_result.right_hand.landmark_positions_device[
                         int(mps.hand_tracking.HandLandmark.WRIST)
                     ]
@@ -394,7 +436,7 @@ class VRSDataExtractor():
                     * NORMAL_VIS_LEN,
                     key,
                 )
-                right_palm_normal_tip = self.get_point_reprojection(
+                right_palm_normal_tip = self.get_hand_point_reprojection(
                     hand_tracking_result.right_hand.landmark_positions_device[
                         int(mps.hand_tracking.HandLandmark.PALM_CENTER)
                     ]
@@ -422,7 +464,6 @@ class VRSDataExtractor():
         Extracts hand and wrist poses from the VRS file based on the index/time domain. The hand and wrist poses are extracted from the following streams:
         - camera-eyetracking
         '''
-
 
         hand_tracking_results = mps.hand_tracking.read_hand_tracking_results(hand_path)
 
@@ -928,38 +969,46 @@ class VRSDataExtractor():
 
         np.save(output_path, self.result)
 
-    def get_object_dets(self):
+    def get_object_dets(self, progress_callback=None):
         '''
         Get automotive object detection results from the VRS file
         '''
+        classes = {
+            0: 'Gear Stick',
+            1: 'Left Wing Mirror',
+            2: 'Rearview Mirror',
+            3: 'Right Wing Mirror',
+            4: 'Steering Wheel'
+        }
 
-        classes = {0: 'Gear Stick', 1: 'Left Wing Mirror', 2: 'Rearview Mirror', 3: 'Right Wing Mirror', 4: 'Steering Wheel'}        
         model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/train/weights/best.pt'
         model = YOLO(model_weight_path)
         results = []
+        device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+        model.to(device)
 
 
+        rgb_values = list(self.result['rgb'].values())
 
-        for image in self.result['rgb'].values():
-
+        for i, image in enumerate(tqdm.tqdm(rgb_values, desc="Object Detection")):
             result = model(image, verbose=False)
-            image = []
-            if result[0].boxes is None:
-                ind = {}
-                results.append(ind)
-            
-            for i in range(len(result[0].boxes.xyxy)):
-                ind = {}
-                if result[0].boxes.conf[i] > 0.4:
-                    ind = {
-                        'class': classes[int(result[0].boxes.cls[i])],
-                        'confidence': result[0].boxes.conf[i],
-                        'bounding_box': result[0].boxes.xyxy[i]
-                    }
-                    image.append(ind)
+            image_dets = []
 
-            results.append(image)
-            
+            if result[0].boxes is not None:
+                for j in range(len(result[0].boxes.xyxy)):
+                    if result[0].boxes.conf[j] > 0.4:
+                        image_dets.append({
+                            'class': classes[int(result[0].boxes.cls[j])],
+                            'confidence': result[0].boxes.conf[j],
+                            'bounding_box': result[0].boxes.xyxy[j]
+                        })
+
+            results.append(image_dets)
+
+            # Call progress update
+            if progress_callback:
+                progress_callback(i + 1, len(rgb_values))
+
         self.result['object_detections'] = results
 
     def person_detection(self, image):

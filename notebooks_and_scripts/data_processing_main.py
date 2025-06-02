@@ -62,8 +62,8 @@ class DataProcessor:
             vrs_path = os.path.join(path,rec_name,(rec_name + '.vrs'))
             vde = VRSDataExtractor(vrs_path)
             vde.get_image_data(start_frame,end_frame)
-            gaze_path = os.path.join(path, rec_name, 'gaze1.csv')
-            hand_path = os.path.join(path, rec_name, 'wap1.csv')
+            # gaze_path = os.path.join(path, rec_name, 'gaze1.csv')
+            # hand_path = os.path.join(path, rec_name, 'wap1.csv')
 
             vde.get_gaze_hand(gaze_path, hand_path, start_frame*et_scale, end_frame*et_scale)
 
@@ -98,23 +98,47 @@ class DataProcessor:
 
             np.save(os.path.join(path,rec_name,(rec_name + '.npy')), curr_res)
 
-    def vrs_processing(self, path, start_frame = None, end_frame = None, annotate = False): 
+    def vrs_processing(self, path, start_frame = None, end_frame = None, annotate = False, callbacks=None): 
+
+        if callbacks is None:
+            callbacks = {}
 
         vde = VRSDataExtractor(path)
+
         # vde.get_GPS_data()
         if start_frame is None or end_frame is None:
             start_frame = 0
             end_frame = vde.num_frames_rgb
 
-        vde.get_image_data(start_index=start_frame,end_index=end_frame ,rgb_flag=True)
+        vde.get_image_data(start_index=start_frame,end_index=end_frame ,rgb_flag=True, progress_callback=callbacks.get('image_extraction'))
         split = path.split('/')[:-1]
         output_path = os.path.join('/',*split, path.split('/')[-1].split('.')[0] + '.npy')
-        gaze_path = os.path.join('/',*split, 'gaze1.csv')
-        hand_path = os.path.join('/',*split, 'wap1.csv')
-        vde.get_gaze_data(gaze_path, hand_path)
-        vde.get_hand_data(hand_path)
+
+
+        name = path.split('/')[-1].split('.')[0]
+
+        gaze_path = os.path.join('/',*split, f'mps_{name}_vrs','eye_gaze','general_eye_gaze.csv')
+        personalized_gaze_path = os.path.join('/',*split, f'mps_{name}_vrs','eye_gaze','personalized_eye_gaze.csv')
+
+        print(f"Processing gaze data from: {gaze_path}")
+        if os.path.exists(gaze_path) and os.path.exists(personalized_gaze_path):
+            vde.get_gaze_data(gaze_path, personalized_gaze_path)
+        elif os.path.exists(gaze_path):
+            vde.get_gaze_data(gaze_path, None)
+        else:
+            print(f"Gaze data not found at: {gaze_path}. Skipping gaze data processing.")
+
+        
+        
+        hand_path = os.path.join('/',*split, f'mps_{name}_vrs','hand_tracking','hand_tracking_results.csv')
+
+        print(f"Processing hand data from: {gaze_path}")
+        if os.path.exists(hand_path):
+            vde.get_hand_data(hand_path)
+
+
         vde.get_IMU_data()
-        vde.get_object_dets()
+        vde.get_object_dets(progress_callback=callbacks.get('object_detection'))
 
 
         # vde.get_GPS_data()
