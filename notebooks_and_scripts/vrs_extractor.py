@@ -10,6 +10,7 @@ import pandas as pd
 import tqdm
 import io
 from ultralytics import YOLO
+from typing import Dict, List, Optional
 '''
 import mediapipe as mp
 from mediapipe import solutions
@@ -27,13 +28,15 @@ from projectaria_tools.core.mps.utils import (
     get_gaze_vector_reprojection,
     get_nearest_eye_gaze,
     get_nearest_pose,
-    filter_points_from_confidence
+    filter_points_from_confidence,
+    get_nearest_hand_tracking_result
 )
 from projectaria_tools.core.calibration import (
     device_calibration_from_json_string,
     distort_by_calibration,
     get_linear_camera_calibration,
 )
+from filterpy.kalman import KalmanFilter
 os.environ['YOLO_VERBOSE'] = 'False'
 
 import sys
@@ -47,6 +50,14 @@ class VRSDataExtractor():
     def __init__(self, vrs_path: str):
         self.path = vrs_path
         self.provider = data_provider.create_vrs_data_provider(self.path)
+        
+        self.time_domain = TimeDomain.DEVICE_TIME  # query data based on host time
+        self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
+        self.provider.set_devignetting(True)
+        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
+        self.device_calibration = self.provider.get_device_calibration()
+
+        
         # self.provider.set_devignetting(True)
         # self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
 
@@ -62,11 +73,22 @@ class VRSDataExtractor():
             "imu-left":StreamId("1202-2")
         }
 
-        self.time_domain = TimeDomain.DEVICE_TIME  # query data based on host time
-        self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
-        self.provider.set_devignetting(True)
-        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
+        self.stream_ids: Dict[str, StreamId] = {
+                "rgb": StreamId("214-1"),
+                "slam-left": StreamId("1201-1"),
+                "slam-right": StreamId("1201-2")
+                }
+        self.stream_labels: Dict[str, str] = {
+            key: self.provider.get_label_from_stream_id(stream_id)
+            for key, stream_id in self.stream_ids.items()}
         
+        self.stream_timestamps_ns: Dict[str, List[int]] = {
+            key: self.provider.get_timestamps_ns(stream_id, self.time_domain)
+            for key, stream_id in self.stream_ids.items()}
+
+        self.camera_calibrations = {key: self.device_calibration.get_camera_calib(stream_label) for key, stream_label in self.stream_labels.items()}
+        
+
         try:
             self.rgb_start_time = self.provider.get_first_time_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         except:
@@ -194,17 +216,32 @@ class VRSDataExtractor():
                 print(f"Extracted {len(self.result['slam_right'])} images from {right_slam_label} stream")
             except:
                 print("Error extracting slam images, likely not present in VRS file ")
+
+    def create_kalman_filter(self):
+        kf = KalmanFilter(dim_x=4, dim_z=2)
+
+        # State vector: [x, y, vx, vy]
+        # Measurement: [x, y]
+        dt = 1.0  # time step
+
+        # Transition matrix (motion model)
+        kf.F = np.array([[1, 0, dt, 0],
+                        [0, 1, 0, dt],
+                        [0, 0, 1, 0 ],
+                        [0, 0, 0, 1 ]])
+
+        # Measurement function
+        kf.H = np.array([[1, 0, 0, 0],
+                        [0, 1, 0, 0]])
+
+        
+        kf.P *= 1000. 
+        kf.Q *= 0.01
+        kf.R *= 5
+
+        return kf
     
-    def preprocessing(self, image_data:list):
-            
-        '''
-        Preprocess the extracted images from the VRS file
-        '''
-
-        rgb_images = self.result['rgb']
-        pass
-
-    def get_gaze_hand(self, gaze_path:str, hand_path:str, start_index=0, end_index=None):
+    def get_gaze_data(self, gaze_path:str, start_index=0, end_index=None):
 
         '''
         Extracts eyegaze points from the VRS file based on the index/time domain. The eyegaze points are extracted from the following streams:
@@ -216,28 +253,24 @@ class VRSDataExtractor():
         
 
         gaze_cpf = mps.read_eyegaze(gaze_path)
-        handwrist_points  = mps.hand_tracking.read_wrist_and_palm_poses(hand_path)
+        # handwrist_points  = mps.hand_tracking.read_wrist_and_palm_poses(hand_path)
         
 
         if start_index == 0 and end_index == None:
             num_et = len(gaze_cpf)
-            num_hw = len(handwrist_points)
+            # num_hw = len(handwrist_points)
             et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_et)]
-            hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_hw)]
+            # hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_hw)]
         else:
             et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
             #hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
 
         print(f'length of eye tracking tiemstamps {len(et_ts)}')
 
-
-        
-
         for ts in et_ts:
             gaze_point = get_nearest_eye_gaze(gaze_cpf, ts)
 
             if gaze_point is not None:
-
 
                 rgb_stream_label = self.provider.get_label_from_stream_id(self.stream_mappings['camera-rgb'])
                 device_calibration = self.provider.get_device_calibration()
@@ -251,12 +284,183 @@ class VRSDataExtractor():
                         depth_m=gaze_point.depth
                     )
                 
-                
                 gaze_points[ts] = {
                     "projection": gaze_projection,
                     'depth': gaze_point.depth,
                 }
         self.result['gaze'] = gaze_points
+
+
+        smoothed_gaze = []
+
+        gaze = list(gaze_points.values())
+        gaze = [g['projection']*(512/1408) for g in gaze]
+
+        kf = self.create_kalman_filter()
+        kf.x[:2] = np.array([[gaze[0][0]], [gaze[0][1]]])  # Initialize with first point
+
+        smoothed_gaze = []
+
+        for z in gaze:
+            kf.predict()
+            kf.update(np.array(z))
+            smoothed_gaze.append((kf.x[0, 0], kf.x[1, 0]))
+
+        self.result['smoothed_gaze'] = smoothed_gaze
+
+    def get_hand_point_reprojection(self, point_position_device: np.array, key: str) -> Optional[np.array]:
+        point_position_camera = self.get_T_device_sensor(key).inverse() @ point_position_device
+        point_position_pixel = self.camera_calibrations[key].project(point_position_camera)
+        return point_position_pixel
+    
+    def get_T_device_sensor(self, key: str):
+        return self.device_calibration.get_transform_device_sensor(self.stream_labels[key])
+
+    def get_landmark_pixels(self, key: str, hand_tracking_result: mps.hand_tracking.HandTrackingResult) -> np.array:
+    
+
+        left_wrist = None
+        left_palm = None
+        left_landmarks = None
+        right_wrist = None
+        right_palm = None
+        right_landmarks = None
+        left_wrist_normal_tip = None
+        left_palm_normal_tip = None
+        right_wrist_normal_tip = None
+        right_palm_normal_tip = None
+
+
+        NORMAL_VIS_LEN = 0.05  # meters
+
+        
+        if hand_tracking_result.left_hand:
+            left_landmarks = [
+                self.get_point_reprojection(landmark, key)
+                for landmark in hand_tracking_result.left_hand.landmark_positions_device
+            ]
+            left_wrist = self.get_point_reprojection(
+                hand_tracking_result.left_hand.landmark_positions_device[
+                    int(mps.hand_tracking.HandLandmark.WRIST)
+                ],
+                key,
+            )
+            left_palm = self.get_point_reprojection(
+                hand_tracking_result.left_hand.landmark_positions_device[
+                    int(mps.hand_tracking.HandLandmark.PALM_CENTER)
+                ],
+                key,
+            )
+            if hand_tracking_result.left_hand.wrist_and_palm_normal_device is not None:
+                left_wrist_normal_tip = self.get_point_reprojection(
+                    hand_tracking_result.left_hand.landmark_positions_device[
+                        int(mps.hand_tracking.HandLandmark.WRIST)
+                    ]
+                    + hand_tracking_result.left_hand.wrist_and_palm_normal_device.wrist_normal_device
+                    * NORMAL_VIS_LEN,
+                    key,
+                )
+                left_palm_normal_tip = self.get_point_reprojection(
+                    hand_tracking_result.left_hand.landmark_positions_device[
+                        int(mps.hand_tracking.HandLandmark.PALM_CENTER)
+                    ]
+                    + hand_tracking_result.left_hand.wrist_and_palm_normal_device.palm_normal_device
+                    * NORMAL_VIS_LEN,
+                    key,
+                )
+        if hand_tracking_result.right_hand:
+            right_landmarks = [
+                self.get_point_reprojection(landmark, key)
+                for landmark in hand_tracking_result.right_hand.landmark_positions_device
+            ]
+            right_wrist = self.get_point_reprojection(
+                hand_tracking_result.right_hand.landmark_positions_device[
+                    int(mps.hand_tracking.HandLandmark.WRIST)
+                ],
+                key,
+            )
+            right_palm = self.get_point_reprojection(
+                hand_tracking_result.right_hand.landmark_positions_device[
+                    int(mps.hand_tracking.HandLandmark.PALM_CENTER)
+                ],
+                key,
+            )
+            if hand_tracking_result.right_hand.wrist_and_palm_normal_device is not None:
+                right_wrist_normal_tip = self.get_point_reprojection(
+                    hand_tracking_result.right_hand.landmark_positions_device[
+                        int(mps.hand_tracking.HandLandmark.WRIST)
+                    ]
+                    + hand_tracking_result.right_hand.wrist_and_palm_normal_device.wrist_normal_device
+                    * NORMAL_VIS_LEN,
+                    key,
+                )
+                right_palm_normal_tip = self.get_point_reprojection(
+                    hand_tracking_result.right_hand.landmark_positions_device[
+                        int(mps.hand_tracking.HandLandmark.PALM_CENTER)
+                    ]
+                    + hand_tracking_result.right_hand.wrist_and_palm_normal_device.palm_normal_device
+                    * NORMAL_VIS_LEN,
+                    key,
+                )
+        
+        return (
+            left_wrist,
+            left_palm,
+            right_wrist,
+            right_palm,
+            left_wrist_normal_tip,
+            left_palm_normal_tip,
+            right_wrist_normal_tip,
+            right_palm_normal_tip,
+            left_landmarks,
+            right_landmarks
+        )
+    
+    def get_hand_data(self, hand_path:str, start_index=0, end_index=None):
+
+        '''
+        Extracts hand and wrist poses from the VRS file based on the index/time domain. The hand and wrist poses are extracted from the following streams:
+        - camera-eyetracking
+        '''
+
+
+        hand_tracking_results = mps.hand_tracking.read_hand_tracking_results(hand_path)
+
+        # frame_timestamps = list(hand_frames_data.keys())
+
+        if start_index == 0 and end_index == None:
+            num_hw = len(hand_tracking_results)
+            hw_ts = [hand_tracking_results[i].tracking_timestamp.total_seconds() * 1e9 for i in range(num_hw)]
+        else:
+            hw_ts = [hand_tracking_results[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
+
+
+        
+        hand_landmarks = {}
+
+        for ts in hw_ts:
+            hand_point = get_nearest_hand_tracking_result(hand_tracking_results, ts)
+
+            if hand_point is not None:
+
+                (left_wrist,left_palm,right_wrist,right_palm,left_wrist_normal,left_palm_normal,
+                 right_wrist_normal,right_palm_normal,left_landmarks,right_landmarks) = self.get_landmark_pixels('rgb', hand_point)
+                
+        
+                hand_landmarks[ts] = {
+                    "left_wrist": left_wrist,
+                    "left_palm": left_palm,
+                    "right_wrist": right_wrist,
+                    "right_palm": right_palm,
+                    "left_wrist_normal": left_wrist_normal,
+                    "left_palm_normal": left_palm_normal,
+                    "right_wrist_normal": right_wrist_normal,
+                    "right_palm_normal": right_palm_normal,
+                    "left_landmarks": left_landmarks,
+                    "right_landmarks": right_landmarks,
+                    }
+                
+        self.result['hand_landmarks'] = hand_landmarks
 
     def get_slam_data(self, slam_path:str, start_index=0, end_index=None):
 
@@ -451,7 +655,6 @@ class VRSDataExtractor():
         
         self.result['gps'] = gps_data
 
-
     def ego_blur(self, input_labels:str, frames):
 
         '''
@@ -554,51 +757,8 @@ class VRSDataExtractor():
 
             count += 1
         print(f'Returing {len(frames)} frames with ego-blur applied')
-        return frames
-
-    #TODO
-    def pc_filter(self, slam_path:str):
-        '''
-        Load the point cloud data from the VRS file
-        '''
-
-        global_points_path = os.path.join(slam_path, "semidense_points.csv.gz")
-
-        points = mps.read_global_point_cloud(global_points_path)
-
-        # filter the point cloud using thresholds on the inverse depth and distance standard deviation
-        inverse_distance_std_threshold = 0.001
-        distance_std_threshold = 0.15
-
-        filtered_points = filter_points_from_confidence(points, inverse_distance_std_threshold, distance_std_threshold)
-
-        point_cloud_points = []
-
-        for point in filtered_points:
-            distance_std = point.distance_std
-            graph_uid = point.graph_uid
-            inverse_distance_std = point.inverse_distance_std
-            position_world = point.position_world
-            uid = point.uid
-
-            point = {
-                'uid': uid,
-                'graph_uid': graph_uid,
-                'position_world': position_world,
-                'inverse_distance_std': inverse_distance_std,
-                'distance_std': distance_std
-            }
-            point_cloud_points.append(point)
-
-        self.result['Point Cloud List'] = point_cloud_points
-
-
-
-
-
-        # observations_path = "/path/to/mps/output/trajectory/semidense_observations.csv.gz"
-        # observations = mps.read_point_observations(observations_path)
-
+        return frame
+    
     def undistort_gaze(self,point_distorted_px, src_calib, dst_calib):
 
         ray = src_calib.unproject(point_distorted_px)
@@ -747,8 +907,6 @@ class VRSDataExtractor():
         finally:
             cv2.destroyAllWindows()
 
-
-
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
         """Records labels for all frames passed during advance"""
         labels = []
@@ -803,34 +961,6 @@ class VRSDataExtractor():
             results.append(image)
             
         self.result['object_detections'] = results
-    
-    def heatmaps(self, frames, gazes):
-        '''
-        Create heatmaps for the extracted data from the VRS file
-        '''
-
-
-        for img,gaze in zip(frames,gazes):
-            heatmap = np.zeros((640, 640))
-            scale = (640/1408)
-            gaze = scale * gaze
-
-
-
-        # img_size=(640,640)
-        # heatmap = np.zeros()
-        # print(len(gaze_points))
-        # #normalise gaze points from original frame size of 1408x1408 to 224x224
-        # scale = (224/1408)
-        # gaze_points = [(x*scale, y*scale) for x, y in gaze_points]
-
-        # for x, y in gaze_points:
-        #     heatmap = cv2.circle(heatmap, (int(x), int(y)), radius=5, color=1, thickness=-1)
-
-        
-
-        # return cv2.GaussianBlur(heatmap, (15, 15), 0)
-
 
     def person_detection(self, image):
         '''

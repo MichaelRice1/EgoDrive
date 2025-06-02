@@ -11,7 +11,6 @@ import csv
 from time import time
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
 
-# egoblur appears to work but should be fully checked with better data 
 class DataProcessor:
 
     def __init__(self, base_data_path = None):
@@ -112,22 +111,27 @@ class DataProcessor:
         output_path = os.path.join('/',*split, path.split('/')[-1].split('.')[0] + '.npy')
         gaze_path = os.path.join('/',*split, 'gaze1.csv')
         hand_path = os.path.join('/',*split, 'wap1.csv')
-        vde.get_gaze_hand(gaze_path, hand_path)
-
-        # vde.get_GPS_data()
-
-        # # # vde.get_slam_data(slam_path)
+        vde.get_gaze_data(gaze_path, hand_path)
+        vde.get_hand_data(hand_path)
         vde.get_IMU_data()
-        
-        if annotate:
-            vde.annotate(vde.result['rgb'],'actions.csv')
-
         vde.get_object_dets()
 
 
-        # # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'
+        # vde.get_GPS_data()
 
-        vde.save_data(output_path)
+        # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'
+        # vde.get_slam_data(slam_path)
+
+        # vde.save_data(output_path)
+
+
+
+        if annotate:
+            vde.annotate(vde.result['rgb'],'actions.csv')
+
+
+
+
         return vde.result
 
 
