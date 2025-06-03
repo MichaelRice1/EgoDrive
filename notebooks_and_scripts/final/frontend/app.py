@@ -7,15 +7,32 @@ import sys
 sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts')
 from vrs_extractor import VRSDataExtractor
 from data_processing_main import DataProcessor
+import json
+from llama_cpp import Llama
+
 st.set_page_config(page_title="Driver Scoring Dashboard", layout="centered")
 
 st.title("🚗 Driver Scoring Dashboard")
 
 root_dir = "/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data"
-
 session_folders = [f for f in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, f))]
 
+with st.spinner("⏳ Loading LLM..."):
+    llm = Llama(model_path="/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/utilities/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+    n_ctx=2048,        
+    n_threads=8,      
+    n_batch=64,         
+    use_mlock=True,    
+    verbose=True        
+)
 
+
+
+def check_files_exist(files):
+    for file in files:
+        if not os.path.exists(file):
+            return False
+    return True
 
 def frame_progress_callback(current, total):
     percent = int((current / total) * 100)
@@ -27,17 +44,57 @@ def object_detection_progress(current, total):
     obj_det_progress.progress(percent, text=f"Object Detection: {percent}%")
     obj_det_status.text(f"Processed {current}/{total} frames")
 
+def find_vrs_file(folder_path):
+    for fname in os.listdir(folder_path):
+        if fname.endswith(".vrs"):
+            return fname  # Return the first .vrs file found
+    return None
+
+def check_output_folder(folder_path, base_name):
+    mps = f'mps_{base_name}_vrs'
+    output_folder = os.path.join(folder_path, mps)
+    return os.path.exists(output_folder) and os.path.isdir(output_folder)
+
 # --- Sidebar for folder selection ---
 with st.sidebar:
     st.header("Session Selection")
     selected_folder = st.selectbox("Select a session folder:", session_folders)
     st.info("Select a session folder to process driving data and score the driver.")
 
-    st.header('Data Information')
-    st.write(f'**Data Modalities:** RGB, Gaze, Hand Landmarking, IMU, Object Detections, GPS')
 
-    len_frames = 1000
-    st.write(f'**Recording Length:** {len_frames} frames / {(len_frames / 15) / 60:.2f} mins')
+    info_file_path = find_vrs_file(os.path.join(root_dir, selected_folder))
+    if info_file_path is not None:  # filename without extension
+        base_name = os.path.splitext(info_file_path)[0]
+        info_file_path2 = os.path.join(root_dir, selected_folder, f'{base_name}.vrs.json')
+        if os.path.exists(info_file_path2):
+            with open(info_file_path2, 'r') as f:
+                info_data = json.load(f)
+    
+
+        st.header('Data Healthcheck and Information')
+
+        with st.expander("Data Information"):
+            data_profile_info = info_data['custom_profile']['description'][8:-1]
+            image_format = info_data['custom_profile']['rgb_camera']['image_format']
+            num_frames = info_data['data_quality_stats']['rgb_camera']['processed']
+            st.write(f'{data_profile_info}')
+            st.write(f"**Number of Frames:** {num_frames}")
+            st.write(f"**Image Format:** {image_format}")
+
+        with st.expander("Recording Healthcheck"):
+            rgb_score = info_data['data_quality_stats']['rgb_camera']['score']
+            st.write(f"**RGB Camera Score:** {rgb_score}")
+            imu1_score = info_data['data_quality_stats']['imu_1']['score']
+            st.write(f"**IMU 1 Score:** {imu1_score}")
+            imu2_score = info_data['data_quality_stats']['imu_2']['score']
+            st.write(f"**IMU 2 Score:** {imu2_score}")
+            et_camera_score = info_data['data_quality_stats']['et_camera']['score']
+            st.write(f"**Eye Tracking Camera Score:** {et_camera_score}")
+            s1_score = info_data['data_quality_stats']['slam_camera_1']['score']
+            st.write(f"**SLAM Camera 1 Score:** {s1_score}")
+            s2_score = info_data['data_quality_stats']['slam_camera_2']['score']
+            st.write(f"**SLAM Camera 2 Score:** {s2_score}")
+
 
 
 # Initialize session state variables
@@ -54,23 +111,14 @@ if "base_name" not in st.session_state:
 if "result" not in st.session_state:
     st.session_state.result = None
 
-def find_vrs_file(folder_path):
-    for fname in os.listdir(folder_path):
-        if fname.endswith(".vrs"):
-            return fname  # Return the first .vrs file found
-    return None
 
-def check_output_folder(folder_path, base_name):
-    mps = f'mps_{base_name}_vrs'
-    output_folder = os.path.join(folder_path, mps)
-    return os.path.exists(output_folder) and os.path.isdir(output_folder)
 
 folder_path = os.path.join(root_dir, selected_folder)
 
 st.markdown("---")
 
 # Use columns for buttons side by side
-col1, col2 , col3 = st.columns([1, 1, 1])
+col1, col2 , col3, col4 = st.columns([1, 1, 1, 1])
 
 with col1:
     process_btn = st.button("▶️ Process Driving Data", disabled=st.session_state.processing)
@@ -80,6 +128,9 @@ with col2:
 
 with col3:
     preview_btn = st.button("👀 Preview Data", disabled=st.session_state.processing)
+
+with col4:
+    tips_btn = st.button("💡 Tips for Improvement")
 
 frame_progress = st.progress(0, text="Frame Extraction")
 frame_progress_status = st.empty()
@@ -119,12 +170,18 @@ if process_btn and not st.session_state.processing:
 # Auto-refresh every 30 seconds (30000 milliseconds)
 st_autorefresh(interval=30000, key="datarefresh")
 
+files_to_check = [os.path.join(folder_path, f'mps_{st.session_state.base_name}_vrs', 'eye_gaze', 'general_eye_gaze.csv'),
+                  os.path.join(folder_path, f'mps_{st.session_state.base_name}_vrs', 'eye_gaze', 'personalized_eye_gaze.csv'),
+                  os.path.join(folder_path, f'mps_{st.session_state.base_name}_vrs', 'hand_tracking', 'hand_tracking_results.csv')]
+
+
+
 if st.session_state.processing and not st.session_state.process_finished:
     elapsed = int(time.time() - st.session_state.start_time)
     st.info(f"⏳ Waiting for output files... elapsed time: {elapsed // 60}m {elapsed % 60}s")
 
-    if check_output_folder(folder_path, st.session_state.base_name):
-        st.success("✅ Processing complete!")
+    if check_files_exist(files_to_check):
+        st.success("✅ Processing Completed!")
         st.session_state.processing = False
         st.session_state.process_finished = True
 
@@ -142,8 +199,6 @@ if st.session_state.process_finished:
 
 if preview_btn:
     st.info("👀 Previewing data...")
-
-
     st.write(f"**Previewing data for session:** {vrs_file}")
 
 
@@ -159,6 +214,30 @@ if score_btn:
     llm_prompt = ''
     llm_result = ''
     st.write(f'Tips for driving improvement : {llm_result}')
+    
+
+if "tips_output" not in st.session_state:
+    st.session_state.tips_output = None
+
+if tips_btn:
+    prompt = (
+    "You are an expert driving instructor. Based on the session data below, "
+    "identify which mirror-check behaviors are weak (below 90%) and give 4 specific tips "
+    "only to improve those weak areas:\n"
+    "- Mirror Checks Every 30s: 84%\n"
+    "- Mirror Checks Before Left Turns: 92%\n"
+    "- Mirror Checks Before Right Turns: 53%]"
+    "Focus only on the weakest area. Provide actionable, specific, concise tips ")
+
+    with st.spinner("🧠 Generating tips..."):
+        output = llm(prompt, max_tokens=230)
+        st.session_state.tips_output = output["choices"][0]["text"].strip()
+
+if st.session_state.tips_output:
+    st.info("💡 Tips for driving improvement:")
+    st.write(f"**Tips for improvement:** {st.session_state.tips_output}")
+
+
 
 # Add some bottom padding
 st.markdown("<br><br>", unsafe_allow_html=True)
