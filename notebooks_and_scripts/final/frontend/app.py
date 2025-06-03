@@ -26,7 +26,7 @@ with st.spinner("⏳ Loading LLM..."):
     verbose=True        
 )
 
-
+res = {}
 
 def check_files_exist(files):
     for file in files:
@@ -110,27 +110,22 @@ if "base_name" not in st.session_state:
     st.session_state.base_name = None
 if "result" not in st.session_state:
     st.session_state.result = None
+if "results_dict" not in st.session_state:
+    st.session_state.results_dict = {}
+if 'review_mode' not in st.session_state:
+    st.session_state.review_mode = False
 
 
 
 folder_path = os.path.join(root_dir, selected_folder)
+vrs_file = find_vrs_file(folder_path)
+base_name = os.path.splitext(vrs_file)[0]  # filename without extension
+
+files_to_check = [os.path.join(folder_path, f'mps_{base_name}_vrs', 'eye_gaze', 'general_eye_gaze.csv'),
+                #   os.path.join(folder_path, f'mps_{base_name}_vrs', 'eye_gaze', 'personalized_eye_gaze.csv'),
+                  os.path.join(folder_path, f'mps_{base_name}_vrs', 'hand_tracking', 'hand_tracking_results.csv')]
 
 st.markdown("---")
-
-# Use columns for buttons side by side
-col1, col2 , col3, col4 = st.columns([1, 1, 1, 1])
-
-with col1:
-    process_btn = st.button("▶️ Process Driving Data", disabled=st.session_state.processing)
-
-with col2:
-    score_btn = st.button("🏆 Score Driver")
-
-with col3:
-    preview_btn = st.button("👀 Preview Data", disabled=st.session_state.processing)
-
-with col4:
-    tips_btn = st.button("💡 Tips for Improvement")
 
 frame_progress = st.progress(0, text="Frame Extraction")
 frame_progress_status = st.empty()
@@ -138,7 +133,29 @@ frame_progress_status = st.empty()
 obj_det_progress = st.progress(0, text="Object Detection")
 obj_det_status = st.empty()
 
+# Use columns for buttons side by side
+col1, col2 , col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
+
+with col1:
+    process_btn = st.button("▶️ Process Driving Data", disabled=st.session_state.processing)
+
+with col2:
+    preview_btn = st.button("👀 Preview Data", disabled=st.session_state.processing)
+    
+with col3:
+    score_btn = st.button("🏆 Score Driver", disabled=st.session_state.processing)
+
+with col4:
+    review_btn = st.button("📋 Review Mistakes", disabled=st.session_state.processing)
+    
+with col5:
+    tips_btn = st.button("💡 Tips for Improvement", disabled=st.session_state.processing)
+
+
+
+
 if process_btn and not st.session_state.processing:
+    st.session_state.review_mode = False  
     vrs_file = find_vrs_file(folder_path)
 
     if vrs_file:
@@ -151,7 +168,7 @@ if process_btn and not st.session_state.processing:
         full_vrs_path = os.path.join(input_dir, vrs_file)
         vde = VRSDataExtractor(full_vrs_path)
         dp = DataProcessor(vde)
-        res = dp.vrs_processing(full_vrs_path, callbacks={
+        st.session_state.results_dict = dp.vrs_processing(full_vrs_path, callbacks={
         "object_detection": object_detection_progress,
         "image_extraction": frame_progress_callback})        
         
@@ -167,12 +184,67 @@ if process_btn and not st.session_state.processing:
     else:
         st.warning("⚠️ No .vrs files found in the selected folder.")
 
+if preview_btn:
+    st.session_state.review_mode = False  
+
+    if st.session_state.results_dict is None or not st.session_state.results_dict:
+        st.warning("⚠️ No VRS file found to preview.")
+    else:
+        frames = list(st.session_state.results_dict['rgb'].values())
+        frame_delay = 0.06
+        frame_container = st.empty()    
+
+        st.write("📸 Previewing session frames:")
+        for frame in frames:
+            frame_container.image(frame, channels="RGB")
+            time.sleep(frame_delay)
+
+if score_btn:
+    with st.spinner("🏅 Scoring driver..."):
+        # Replace with your actual scoring logic
+        time.sleep(2)
+        st.session_state.result = 10
+    st.success("🎉 Done!")
+    st.write(f"**Score for session {selected_folder}:** {st.session_state.result}")
+
+
+if tips_btn:
+    prompt = (
+    "You are an expert driving instructor. Based on the session data below, "
+    "identify which mirror-check behaviors are weak (below 90%) and give 4 specific tips "
+    "only to improve those weak areas:\n"
+    "- Mirror Checks Every 30s: 84%\n"
+    "- Mirror Checks Before Left Turns: 92%\n"
+    "- Mirror Checks Before Right Turns: 53%]"
+    "Focus only on the weakest area. Provide actionable, specific, concise tips ")
+
+    with st.spinner("🧠 Generating tips..."):
+        output = llm(prompt, max_tokens=230)
+        st.session_state.tips_output = output["choices"][0]["text"].strip()
+
+if st.session_state.tips_output:
+    st.success("💡 Tips generated successfully!")
+    st.write(f"**Tips for improvement:** {st.session_state.tips_output}")        
+    
+
+if review_btn:
+    st.session_state.review_mode = True
+
+if st.session_state.review_mode:
+    clips = ['Not Checking Left Wing Mirror Before Turning Left ', 
+             'Not Checking Right Wing Mirror Before Changing Lane ',
+             'Using Mobile Phone'] 
+    selected_clip = st.selectbox("Select a clip to review:", clips, index=0)
+    st.write(f"🎬 You selected: {selected_clip}")
+
+
+
+
+
+
 # Auto-refresh every 30 seconds (30000 milliseconds)
 st_autorefresh(interval=30000, key="datarefresh")
 
-files_to_check = [os.path.join(folder_path, f'mps_{st.session_state.base_name}_vrs', 'eye_gaze', 'general_eye_gaze.csv'),
-                  os.path.join(folder_path, f'mps_{st.session_state.base_name}_vrs', 'eye_gaze', 'personalized_eye_gaze.csv'),
-                  os.path.join(folder_path, f'mps_{st.session_state.base_name}_vrs', 'hand_tracking', 'hand_tracking_results.csv')]
 
 
 
@@ -197,41 +269,15 @@ if st.session_state.processing and not st.session_state.process_finished:
 if st.session_state.process_finished:
     st.success("You can now score the driver.")
 
-if preview_btn:
-    st.info("👀 Previewing data...")
-    st.write(f"**Previewing data for session:** {vrs_file}")
 
 
 
-if score_btn:
-    with st.spinner("🏅 Scoring driver..."):
-        # Replace with your actual scoring logic
-        time.sleep(2)
-        st.session_state.result = 10
-    st.success("🎉 Done!")
-    st.write(f"**Score for session {selected_folder}:** {st.session_state.result}")
 
-    llm_prompt = ''
-    llm_result = ''
-    st.write(f'Tips for driving improvement : {llm_result}')
-    
 
 if "tips_output" not in st.session_state:
     st.session_state.tips_output = None
 
-if tips_btn:
-    prompt = (
-    "You are an expert driving instructor. Based on the session data below, "
-    "identify which mirror-check behaviors are weak (below 90%) and give 4 specific tips "
-    "only to improve those weak areas:\n"
-    "- Mirror Checks Every 30s: 84%\n"
-    "- Mirror Checks Before Left Turns: 92%\n"
-    "- Mirror Checks Before Right Turns: 53%]"
-    "Focus only on the weakest area. Provide actionable, specific, concise tips ")
 
-    with st.spinner("🧠 Generating tips..."):
-        output = llm(prompt, max_tokens=230)
-        st.session_state.tips_output = output["choices"][0]["text"].strip()
 
 if st.session_state.tips_output:
     st.info("💡 Tips for driving improvement:")
