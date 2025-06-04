@@ -121,6 +121,8 @@ if 'review_mode' not in st.session_state:
     st.session_state.review_mode = False
 if "tips_output" not in st.session_state:
     st.session_state.tips_output = None
+if "preview_mode" not in st.session_state:
+    st.session_state.preview_mode = False
 
 
 
@@ -153,7 +155,7 @@ with col2:
     preview_btn = st.button("👀 Preview Data", disabled=st.session_state.processing)
     
 with col3:
-    score_btn = st.button("🏆 Score Driver", disabled=st.session_state.processing)
+    score_btn = st.button("🏆 Session Scores", disabled=st.session_state.processing)
 
 with col4:
     review_btn = st.button("📋 Review Mistakes", disabled=st.session_state.processing)
@@ -166,6 +168,8 @@ with col5:
 
 if process_btn and not st.session_state.processing:
     st.session_state.review_mode = False  
+    st.session_state.preview_mode = False
+
     vrs_file = find_vrs_file(folder_path)
 
     if vrs_file:
@@ -200,7 +204,8 @@ if process_btn and not st.session_state.processing:
         st.warning("⚠️ No .vrs files found in the selected folder.")
 
 if preview_btn:
-    st.session_state.review_mode = False  
+    st.session_state.review_mode = False 
+    st.session_state.preview_mode = True
 
     if st.session_state.results_dict is None or not st.session_state.results_dict:
         st.warning("⚠️ No VRS file found to preview.")
@@ -215,6 +220,9 @@ if preview_btn:
             time.sleep(frame_delay)
 
 if score_btn:
+    st.session_state.review_mode = False
+    st.session_state.preview_mode = False
+
     with st.spinner("🏅 Session Results"):
         # Replace with your actual scoring logic
         time.sleep(2)
@@ -224,6 +232,9 @@ if score_btn:
 
 
 if tips_btn:
+    st.session_state.review_mode = False
+    st.session_state.preview_mode = False
+
     prompt = (
     "You are an expert driving instructor. Based on the session data below, "
     "identify which mirror-check behaviors are weak (below 90%) and give 3 specific tips "
@@ -236,10 +247,7 @@ if tips_btn:
     with st.spinner("🧠 Generating tips..."):
         output = llm(prompt, max_tokens=230)
         st.session_state.tips_output = output["choices"][0]["text"].strip()
-
-if st.session_state.tips_output:
-    st.success("💡 Tips generated successfully!")
-    st.write(f"**Tips for improvement:** {st.session_state.tips_output}")        
+    
     
 
 if review_btn:
@@ -254,11 +262,9 @@ if st.session_state.review_mode:
 
 
 
-
-
-
 # Auto-refresh every 30 seconds (30000 milliseconds)
-st_autorefresh(interval=0000, key="datarefresh")
+if not st.session_state.processing and not st.session_state.review_mode and not st.session_state.preview_mode:
+    st_autorefresh(interval=30000, key="datarefresh")
 
 
 
