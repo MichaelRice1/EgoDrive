@@ -44,6 +44,11 @@ def object_detection_progress(current, total):
     obj_det_progress.progress(percent, text=f"Object Detection: {percent}%")
     obj_det_status.text(f"Processed {current}/{total} frames")
 
+def driver_evaluation_progress(current, total):
+    percent = int((current / total) * 100)
+    dr_eval_progress.progress(percent, text=f"Driver Evaluation: {percent}%")
+    dr_eval_status.text(f"Evaluated {current}/{total} frames")
+
 def find_vrs_file(folder_path):
     for fname in os.listdir(folder_path):
         if fname.endswith(".vrs"):
@@ -114,6 +119,8 @@ if "results_dict" not in st.session_state:
     st.session_state.results_dict = {}
 if 'review_mode' not in st.session_state:
     st.session_state.review_mode = False
+if "tips_output" not in st.session_state:
+    st.session_state.tips_output = None
 
 
 
@@ -132,6 +139,9 @@ frame_progress_status = st.empty()
 
 obj_det_progress = st.progress(0, text="Object Detection")
 obj_det_status = st.empty()
+
+dr_eval_progress = st.progress(0, text="Driver Evaluation")
+dr_eval_status = st.empty()
 
 # Use columns for buttons side by side
 col1, col2 , col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
@@ -170,17 +180,22 @@ if process_btn and not st.session_state.processing:
         dp = DataProcessor(vde)
         st.session_state.results_dict = dp.vrs_processing(full_vrs_path, callbacks={
         "object_detection": object_detection_progress,
-        "image_extraction": frame_progress_callback})        
-        
-        try:
-            subprocess.Popen(cmd)  # non-blocking
-            st.session_state.processing = True
-            st.session_state.start_time = time.time()
-            st.session_state.stop_waiting = False
-            st.session_state.process_finished = False
-            st.session_state.base_name = base_name  # save base name for output check
-        except Exception as e:
-            st.error(f"❌ Failed to run aria_mps: {e}")
+        "image_extraction": frame_progress_callback,
+        "driving_evaluation": driver_evaluation_progress
+        }) 
+        if check_files_exist(files_to_check):
+            st.success("✅ All files already processed!")       
+        else:
+            st.info("🔄 Starting processing with aria_mps...")
+            try:
+                subprocess.Popen(cmd)  # non-blocking
+                st.session_state.processing = True
+                st.session_state.start_time = time.time()
+                st.session_state.stop_waiting = False
+                st.session_state.process_finished = False
+                st.session_state.base_name = base_name  # save base name for output check
+            except Exception as e:
+                st.error(f"❌ Failed to run aria_mps: {e}")
     else:
         st.warning("⚠️ No .vrs files found in the selected folder.")
 
@@ -190,7 +205,7 @@ if preview_btn:
     if st.session_state.results_dict is None or not st.session_state.results_dict:
         st.warning("⚠️ No VRS file found to preview.")
     else:
-        frames = list(st.session_state.results_dict['rgb'].values())
+        frames = st.session_state.results_dict['overlays']
         frame_delay = 0.06
         frame_container = st.empty()    
 
@@ -200,7 +215,7 @@ if preview_btn:
             time.sleep(frame_delay)
 
 if score_btn:
-    with st.spinner("🏅 Scoring driver..."):
+    with st.spinner("🏅 Session Results"):
         # Replace with your actual scoring logic
         time.sleep(2)
         st.session_state.result = 10
@@ -211,7 +226,7 @@ if score_btn:
 if tips_btn:
     prompt = (
     "You are an expert driving instructor. Based on the session data below, "
-    "identify which mirror-check behaviors are weak (below 90%) and give 4 specific tips "
+    "identify which mirror-check behaviors are weak (below 90%) and give 3 specific tips "
     "only to improve those weak areas:\n"
     "- Mirror Checks Every 30s: 84%\n"
     "- Mirror Checks Before Left Turns: 92%\n"
@@ -243,7 +258,7 @@ if st.session_state.review_mode:
 
 
 # Auto-refresh every 30 seconds (30000 milliseconds)
-st_autorefresh(interval=30000, key="datarefresh")
+st_autorefresh(interval=0000, key="datarefresh")
 
 
 
@@ -262,16 +277,12 @@ if st.session_state.processing and not st.session_state.process_finished:
         st.session_state.processing = False
         st.warning("⚠️ Stopped waiting for output files.")
 
-    elif elapsed > 20 * 60:  # Timeout after 20 minutes
+    elif elapsed > 100 * 60:  # Timeout after 100 minutes
         st.error("⏰ Timeout: Output files not found after 20 minutes.")
         st.session_state.processing = False
 
 if st.session_state.process_finished:
     st.success("You can now score the driver.")
-
-
-
-
 
 
 if "tips_output" not in st.session_state:

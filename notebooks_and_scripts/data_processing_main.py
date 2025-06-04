@@ -139,6 +139,7 @@ class DataProcessor:
 
         vde.get_IMU_data()
         vde.get_object_dets(progress_callback=callbacks.get('object_detection'))
+        vde.evaluate_driving(list(vde.result['rgb'].values()),vde.result['smoothed_gaze'],vde.result['object_detections'],progress_callback=callbacks.get('driving_evaluation'))
 
 
         # vde.get_GPS_data()

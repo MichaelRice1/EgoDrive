@@ -11,7 +11,7 @@ PROJECT_DIR="/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_
 cd "$PROJECT_DIR"
 
 # Start FastAPI
-uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
+python backend/main.py &
 
 sleep 2
 

@@ -251,7 +251,7 @@ class VRSDataExtractor():
 
         return kf
     
-    def get_gaze_data(self, gaze_path:str,personalized_gaze_path=None, start_index=0, end_index=None):
+    def get_gaze_data(self, gaze_path:str,personalized_gaze_path:str, start_index=0, end_index=None):
 
         '''
         Extracts eyegaze points from the VRS file based on the index/time domain. The eyegaze points are extracted from the following streams:
@@ -330,24 +330,40 @@ class VRSDataExtractor():
 
         self.result['personalized_gaze'] = p_gaze_points
 
-        if personalized_gaze_path:
-            gaze = list(p_gaze_points.values())
-        else:
-            gaze = list(gaze_points.values())
+        # if personalized_gaze_path:
+        #     gaze = list(p_gaze_points.values())
+        # else:
+        #     gaze = list(gaze_points.values())
 
+        p_gaze_points = [g['projection'] for g in p_gaze_points.values()]
+        # p_gaze_points = [point for point in p_gaze_points if point is not None]
+        
+        last_valid = None
+        for i, z in enumerate(p_gaze_points):
+            
+            if z is None:
+                if last_valid is not None:
+                    z = last_valid
+                    p_gaze_points[i] = z  # Optional: update the source list too
+                else:
+                    continue  # Skip if no valid previous point exists
+            else:
+                last_valid = z
+        print(f"Extracted {len(p_gaze_points)} personalized gaze points")
         smoothed_gaze = []
-        gaze = [g['projection']*(512/1408) for g in gaze]
+
+        # gaze = [g[0]['projection']*(512/1408) for g in gaze]
 
         kf = self.create_kalman_filter()
-        kf.x[:2] = np.array([[gaze[0][0]], [gaze[0][1]]])  # Initialize with first point
+        kf.x[:2] = np.array([[p_gaze_points[0][0]], [p_gaze_points[0][1]]])  # Initialize with first point
 
-        smoothed_gaze = []
-
-        for z in gaze:
+        for i, z in enumerate(p_gaze_points):
+            if z is None:
+                z = p_gaze_points[i-1]  # Use the last valid point if current is None
             kf.predict()
             kf.update(np.array(z))
             smoothed_gaze.append((kf.x[0, 0], kf.x[1, 0]))
-
+        print(f"Extracted {len(smoothed_gaze)} smoothed gaze points")   
         self.result['smoothed_gaze'] = smoothed_gaze
 
     def get_hand_point_reprojection(self, point_position_device: np.array, key: str) -> Optional[np.array]:
@@ -1048,8 +1064,145 @@ class VRSDataExtractor():
 
         return cropped_images
 
+    def generate_gaussian_mask(self, shape, center, sigma=20):
+        x = np.arange(0, shape[1])
+        y = np.arange(0, shape[0])
+        x, y = np.meshgrid(x, y)
+        d = np.sqrt((x - center[0])**2 + (y - center[1])**2)
+        g = np.exp(-(d**2 / (2.0 * sigma**2)))
+        return g
 
+    def overlay_gaze_heatmap(self, frame, center, angle_error, threshold=0.05):
+        h, w = frame.shape[:2]
+        fov = 110
+
+        pix_per_deg = w / fov
+        radius = int(angle_error * pix_per_deg)
+        xmin = max(0, center[0] - radius)
+        ymin = max(0, center[1] - radius)
+        xmax = min(w - 1, center[0] + radius)
+        ymax = min(h - 1, center[1] + radius)
+
+        sigma = radius / 2
+        mask = self.generate_gaussian_mask((h, w), center, sigma)
+
+        # Apply a threshold to keep only visible regions
+        mask = (mask * 255).astype(np.uint8)
+        _, mask_thresh = cv2.threshold(mask, int(threshold * 255), 255, cv2.THRESH_BINARY)
+
+        # Create color heatmap
+        heatmap_color = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
+
+
+        # Blend only the gaze region
+        mask_bool = mask_thresh > 0
+        blended = frame.copy()
+        blended[mask_bool] = cv2.addWeighted(frame, 0.5, heatmap_color, 0.5, 0)[mask_bool]
+
+        return blended, xmin, ymin, xmax, ymax
+
+    def evaluate_driving(self, frames, smoothed_gaze, object_dets, progress_callback=None):
+        consecutive_frames_threshold = 8  # frames needed for a valid check
+        overlays = []
+        action_tracking = {
+            "Left Wing Mirror": [],
+            "Right Wing Mirror": [],
+            "Rearview Mirror": []
+        }
+
+        mirror_counters = {
+            "Left Wing Mirror": 0,
+            "Right Wing Mirror": 0,
+            "Rearview Mirror": 0
+        }
+
+        for i, (frame, sg, od) in enumerate(zip(frames, smoothed_gaze, object_dets)):
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            sg = int(sg[0] * (512/1408)), int(sg[1] * (512/1408))  # Adjust gaze point to 512x512 resolution
+
+            overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=12, threshold=0.1)
+
+            gaussian_area = (xmax - xmin) * (ymax - ymin)
+
+            # Flags for this frame
+            gaze_on_mirror = {
+                "Left Wing Mirror": False,
+                "Right Wing Mirror": False,
+                "Rearview Mirror": False
+            }
+
+
+            for b in od:
+                x1, y1, x2, y2 = b['bounding_box']
+                bbox_area = (x2 - x1) * (y2 - y1)
+                mirror_type = b['class']
+
+                if "Mirror" in mirror_type:
+                    width = x2 - x1
+                    height = y2 - y1
+                    x1 = x1.clone() - (0.3 * width)
+                    x2 = x2.clone() + (0.3 * width)
+                    y1 = y1.clone() - (0.3 * height)
+                    y2 = y2.clone() + (0.3 * height)
+
+                    # Calculate IoU
+                    intersection_area = max(0, min(x2, xmax) - max(x1, xmin)) * max(0, min(y2, ymax) - max(y1, ymin))
+                    union_area = bbox_area + gaussian_area - intersection_area
+                    IoU = intersection_area / union_area if union_area > 0 else 0
+
+                    if IoU > 0.25:  # Adjust threshold as needed
+                        gaze_on_mirror[mirror_type] = True
+
+            # Update counters for each mirror type
+            for mirror in mirror_counters:
+                if gaze_on_mirror[mirror]:
+                    mirror_counters[mirror] += 1
+                else:
+                    mirror_counters[mirror] = 0
+
+                # Track detection if threshold reached
+                if mirror_counters[mirror] >= consecutive_frames_threshold:
+                    if i not in action_tracking[mirror]:
+                        action_tracking[mirror].append(i)
+
+                    cv2.putText(overlay, f"{mirror} Check Detected", (25, 50 + 30 * list(mirror_counters.keys()).index(mirror)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            
+            if progress_callback:
+                progress_callback(i + 1, len(frames))
+
+            overlays.append(cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+            
+        self.result['overlays'] = overlays
+        self.result['joined_intervals'] = self.join_action_interval(action_tracking)
+
+    def join_action_interval(self, action_tracking):
+        joined_actions = {}
         
+        for action, frames in action_tracking.items():
+            if not frames:
+                continue
+            
+            # Sort frames and join consecutive intervals
+            frames = sorted(frames)
+            intervals = []
+            start = frames[0]
+            end = frames[0]
+            
+            for f in frames[1:]:
+                if f == end + 1:  # Consecutive frame
+                    end = f
+                else:
+                    if (end - start) > 5:
+                        intervals.append((start, end))
+
+                    start = f
+                    end = f
+            intervals.append((start, end))  # Add last interval
+            joined_actions[action] = intervals
+        
+        return joined_actions        
 
 
 
