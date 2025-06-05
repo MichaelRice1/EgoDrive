@@ -1101,9 +1101,10 @@ class VRSDataExtractor():
 
         return blended, xmin, ymin, xmax, ymax
 
-    def evaluate_driving(self, frames, smoothed_gaze, object_dets, progress_callback=None):
-        consecutive_frames_threshold = 8  # frames needed for a valid check
+    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz, progress_callback=None):
+        consecutive_frames_threshold = 8
         overlays = []
+
         action_tracking = {
             "Left Wing Mirror": [],
             "Right Wing Mirror": [],
@@ -1116,22 +1117,47 @@ class VRSDataExtractor():
             "Rearview Mirror": 0
         }
 
+        direction = "Forward"
+
         for i, (frame, sg, od) in enumerate(zip(frames, smoothed_gaze, object_dets)):
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            
-            sg = int(sg[0] * (512/1408)), int(sg[1] * (512/1408))  # Adjust gaze point to 512x512 resolution
+            sg = int(sg[0] * (512 / 1408)), int(sg[1] * (512 / 1408))
 
-            overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=12, threshold=0.1)
-
+            overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=8, threshold=0.1)
             gaussian_area = (xmax - xmin) * (ymax - ymin)
 
-            # Flags for this frame
-            gaze_on_mirror = {
-                "Left Wing Mirror": False,
-                "Right Wing Mirror": False,
-                "Rearview Mirror": False
-            }
+            imu_per_frame = 1000 / 15 
 
+            gx_samples = imu_gx[i * int(imu_per_frame):(i + 1) * int(imu_per_frame)]
+            gy_samples = imu_gy[i * int(imu_per_frame):(i + 1) * int(imu_per_frame)]
+            gz_samples = imu_gz[i * int(imu_per_frame):(i + 1) * int(imu_per_frame)]
+            
+            max_gx = gx_samples[np.argmax(np.abs(gx_samples))]
+            max_gy = gy_samples[np.argmax(np.abs(gy_samples))]
+            max_gz = gz_samples[np.argmax(np.abs(gz_samples))]
+
+
+
+            if direction == "Forward":
+                if max_gx > 1.0:
+                    direction = "Right"
+                elif max_gx < -1.0:
+                    direction = "Left"
+                
+
+            elif direction == "Right":
+                if max_gx < -0.5:
+                    direction = "Forward"
+
+            elif direction == "Left":
+                if max_gx > 0.5:
+                    direction = "Forward"
+
+            
+            cv2.putText(overlay, f"Head Direction: {direction}", (25, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+
+            gaze_on_mirror = {key: False for key in mirror_counters}
 
             for b in od:
                 x1, y1, x2, y2 = b['bounding_box']
@@ -1139,42 +1165,42 @@ class VRSDataExtractor():
                 mirror_type = b['class']
 
                 if "Mirror" in mirror_type:
-                    width = x2 - x1
-                    height = y2 - y1
+                    width, height = x2 - x1, y2 - y1
                     x1 = x1.clone() - (0.3 * width)
                     x2 = x2.clone() + (0.3 * width)
                     y1 = y1.clone() - (0.3 * height)
                     y2 = y2.clone() + (0.3 * height)
 
-                    # Calculate IoU
                     intersection_area = max(0, min(x2, xmax) - max(x1, xmin)) * max(0, min(y2, ymax) - max(y1, ymin))
                     union_area = bbox_area + gaussian_area - intersection_area
                     IoU = intersection_area / union_area if union_area > 0 else 0
 
-                    if IoU > 0.25:  # Adjust threshold as needed
+                    if IoU > 0.25:
                         gaze_on_mirror[mirror_type] = True
 
-            # Update counters for each mirror type
             for mirror in mirror_counters:
                 if gaze_on_mirror[mirror]:
                     mirror_counters[mirror] += 1
                 else:
                     mirror_counters[mirror] = 0
 
-                # Track detection if threshold reached
                 if mirror_counters[mirror] >= consecutive_frames_threshold:
                     if i not in action_tracking[mirror]:
                         action_tracking[mirror].append(i)
 
                     cv2.putText(overlay, f"{mirror} Check Detected", (25, 50 + 30 * list(mirror_counters.keys()).index(mirror)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            
+
+
+
+        
             if progress_callback:
                 progress_callback(i + 1, len(frames))
 
             overlays.append(cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
-            
+        
         self.result['overlays'] = overlays
+        self.result['action_tracking'] = action_tracking
         self.result['joined_intervals'] = self.join_action_interval(action_tracking)
 
     def join_action_interval(self, action_tracking):
@@ -1204,8 +1230,56 @@ class VRSDataExtractor():
         
         return joined_actions        
 
+    def score_driver(self, num_frames, action_intervals):
+        """
+        Score the driving based on detected actions.
+        Returns an overall score between 0 and 1, as well as other statistics.
+        """
 
+        score = 100
 
+        rwm = 0
+        lwm = 0
+        rvm = 0
+
+        segment_intervals = {i: [] for i in range(0, num_frames, 30*15)}
+        
+        # print(segment_intervals)
+
+        for action, intervals in action_intervals.items():
+            for start, end in intervals:
+                for bin_start in segment_intervals.keys():
+                    bin_end = bin_start + 30 * 15
+                    if start >= bin_start and end <= bin_end:
+                        segment_intervals[bin_start].append((action,start, end))
+                        break
+        
+        mistake_sections = []
+        for seg, actions in segment_intervals.items():
+            if not actions:
+                rwm += 1
+                lwm += 1
+                rvm += 1
+                mistake_sections.append((seg, seg + 450, f'No mirror checks detected from aeconds {seg/15} to {seg/15 + 30}.'))
+                continue
+            actions = [a[0] for a in actions]
+
+            if "Left Wing Mirror" not in actions:
+                lwm += 1
+            if "Right Wing Mirror" not in actions:
+                rwm += 1
+            if "Rearview Mirror" not in actions:
+                rvm += 1
+        
+        lwm_percent = round((lwm / len(segment_intervals)) * 100 , 4)
+        rwm_percent = round((rwm / len(segment_intervals)) * 100 , 4)
+        rvm_percent = round((rvm / len(segment_intervals)) * 100 , 4)
+        
+        score = round((lwm_percent + rwm_percent + rvm_percent) / 3, 4)
+
+        self.result['scores'] = (score, lwm_percent, rwm_percent, rvm_percent)
+        self.result['mistake_sections'] = mistake_sections
+        
 
 
         

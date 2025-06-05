@@ -123,6 +123,12 @@ if "tips_output" not in st.session_state:
     st.session_state.tips_output = None
 if "preview_mode" not in st.session_state:
     st.session_state.preview_mode = False
+if "vde" not in st.session_state:
+    st.session_state.vde = None
+if "llm_mode" not in st.session_state:
+    st.session_state.llm_mode = False
+if 'selected_mistake' not in st.session_state:
+    st.session_state.selected_mistake = None
 
 
 
@@ -169,6 +175,7 @@ with col5:
 if process_btn and not st.session_state.processing:
     st.session_state.review_mode = False  
     st.session_state.preview_mode = False
+    st.session_state.llm_mode = False
 
     vrs_file = find_vrs_file(folder_path)
 
@@ -180,8 +187,8 @@ if process_btn and not st.session_state.processing:
         input_dir = os.path.expanduser(folder_path)
         cmd = ["aria_mps", "single", "-i", input_dir]
         full_vrs_path = os.path.join(input_dir, vrs_file)
-        vde = VRSDataExtractor(full_vrs_path)
-        dp = DataProcessor(vde)
+        st.session_state.vde = VRSDataExtractor(full_vrs_path)
+        dp = DataProcessor(st.session_state.vde)
         st.session_state.results_dict = dp.vrs_processing(full_vrs_path, callbacks={
         "object_detection": object_detection_progress,
         "image_extraction": frame_progress_callback,
@@ -205,13 +212,15 @@ if process_btn and not st.session_state.processing:
 
 if preview_btn:
     st.session_state.review_mode = False 
+    st.session_state.llm_mode = False
     st.session_state.preview_mode = True
+    
 
     if st.session_state.results_dict is None or not st.session_state.results_dict:
         st.warning("⚠️ No VRS file found to preview.")
     else:
         frames = st.session_state.results_dict['overlays']
-        frame_delay = 0.06
+        frame_delay = 0.05
         frame_container = st.empty()    
 
         st.write("📸 Previewing session frames:")
@@ -222,27 +231,38 @@ if preview_btn:
 if score_btn:
     st.session_state.review_mode = False
     st.session_state.preview_mode = False
+    st.session_state.llm_mode = False
 
     with st.spinner("🏅 Session Results"):
-        # Replace with your actual scoring logic
-        time.sleep(2)
-        st.session_state.result = 10
+        time.sleep(2)  # Simulate processing time
+
     st.success("🎉 Done!")
-    st.write(f"**Score for session {selected_folder}:** {st.session_state.result}")
+    st.write(f"**Score for session {selected_folder}:** {st.session_state.results_dict['scores'][0]:.2f}%")
+    st.write(f"**Left Mirror Checks:** {st.session_state.results_dict['scores'][1]:.2f}%")
+    st.write(f"**Right Mirror Checks:** {st.session_state.results_dict['scores'][2]:.2f}%")
+    st.write(f"**Rearview Mirror Checks:** {st.session_state.results_dict['scores'][3]:.2f}%")
 
 
 if tips_btn:
+    st.session_state.processing = False
     st.session_state.review_mode = False
     st.session_state.preview_mode = False
+    st.session_state.llm_mode = True
+
+    overall_score = st.session_state.results_dict['scores'][0]
+    left_mirror_score = st.session_state.results_dict['scores'][1]
+    right_mirror_score = st.session_state.results_dict['scores'][2]
+    rearview_mirror_score = st.session_state.results_dict['scores'][3]
 
     prompt = (
-    "You are an expert driving instructor. Based on the session data below, "
-    "identify which mirror-check behaviors are weak (below 90%) and give 3 specific tips "
-    "only to improve those weak areas:\n"
-    "- Mirror Checks Every 30s: 84%\n"
-    "- Mirror Checks Before Left Turns: 92%\n"
-    "- Mirror Checks Before Right Turns: 53%]"
-    "Focus only on the weakest area. Provide actionable, specific, concise tips ")
+    f"""You are an expert driving instructor. Based on the session data below, "
+    identify which mirror-check behaviors are weak (below 90%) and give 3 specific tips "
+    only to improve those weak areas:\n"
+    - Left Wing Mirror Checks Every 30s: {left_mirror_score}\n"
+    - Right Wing Mirror Checks Every 30s: {right_mirror_score}\n"
+    - Rearview Mirror Checks Every 30s: {rearview_mirror_score}\n"
+    - Overall Score: {overall_score}\n"
+    Focus only on the weakest area. Provide actionable, specific, concise tips """)
 
     with st.spinner("🧠 Generating tips..."):
         output = llm(prompt, max_tokens=230)
@@ -251,19 +271,44 @@ if tips_btn:
     
 
 if review_btn:
-    st.session_state.review_mode = True
+    if not st.session_state.results_dict or 'mistake_sections' not in st.session_state.results_dict:
+        st.warning("⚠️ No mistakes found in the session. Please process the data first.")
+    else:
 
-if st.session_state.review_mode:
-    clips = ['Not Checking Left Wing Mirror Before Turning Left ', 
-             'Not Checking Right Wing Mirror Before Changing Lane ',
-             'Using Mobile Phone'] 
-    selected_clip = st.selectbox("Select a clip to review:", clips, index=0)
-    st.write(f"🎬 You selected: {selected_clip}")
+
+        st.session_state.preview_mode = False
+        st.session_state.llm_mode = False
+        st.session_state.review_mode = True
+        mistake_sections = st.session_state.results_dict['mistake_sections']
+        mistake_map = {m[2]: (m[0], m[1]) for m in mistake_sections}
+
+        if not mistake_sections:
+            st.warning("⚠️ No mistakes found in this session.")
+        else:
+            mistake_label = st.selectbox("Select a mistake to review:", list(mistake_map.keys()), index=0)
+
+            # If the selection changed, update and trigger replay
+            if st.session_state.selected_mistake != mistake_label:
+                st.session_state.selected_mistake = mistake_label
+                st.session_state.play_video = True
+
+if st.session_state.get("play_video", False):
+    mistake_label = st.session_state.selected_mistake
+    start_idx, end_idx = st.session_state.results_dict['mistake_sections'][[m[2] for m in st.session_state.results_dict['mistake_sections']].index(mistake_label)][:2]
+    frames = st.session_state.results_dict['overlays'][start_idx:end_idx]
+    frame_container = st.empty()
+
+    for frame in frames:
+        frame_container.image(frame, channels="RGB")
+        time.sleep(0.05)
+
+    st.session_state.play_video = False  # Prevent replay on next rerun
+
 
 
 
 # Auto-refresh every 30 seconds (30000 milliseconds)
-if not st.session_state.processing and not st.session_state.review_mode and not st.session_state.preview_mode:
+if not st.session_state.processing and not st.session_state.review_mode and not st.session_state.preview_mode and not st.session_state.llm_mode:
     st_autorefresh(interval=30000, key="datarefresh")
 
 
@@ -291,8 +336,6 @@ if st.session_state.process_finished:
     st.success("You can now score the driver.")
 
 
-if "tips_output" not in st.session_state:
-    st.session_state.tips_output = None
 
 
 
