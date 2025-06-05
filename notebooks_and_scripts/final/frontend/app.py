@@ -228,45 +228,54 @@ if preview_btn:
             frame_container.image(frame, channels="RGB")
             time.sleep(frame_delay)
 
+
+
 if score_btn:
-    st.session_state.review_mode = False
-    st.session_state.preview_mode = False
-    st.session_state.llm_mode = False
+    if not st.session_state.results_dict or 'scores' not in st.session_state.results_dict:
+        st.warning("⚠️ No scores available. Please process the data first.")
+    else:
+        st.session_state.review_mode = False
+        st.session_state.preview_mode = False
+        st.session_state.llm_mode = False
 
-    with st.spinner("🏅 Session Results"):
-        time.sleep(2)  # Simulate processing time
+        with st.spinner("🏅 Session Results"):
+            time.sleep(2)  # Simulate processing time
 
-    st.success("🎉 Done!")
-    st.write(f"**Score for session {selected_folder}:** {st.session_state.results_dict['scores'][0]:.2f}%")
-    st.write(f"**Left Mirror Checks:** {st.session_state.results_dict['scores'][1]:.2f}%")
-    st.write(f"**Right Mirror Checks:** {st.session_state.results_dict['scores'][2]:.2f}%")
-    st.write(f"**Rearview Mirror Checks:** {st.session_state.results_dict['scores'][3]:.2f}%")
+        st.success("🎉 Done!")
+        st.write(f"**Score for session {selected_folder}:** {st.session_state.results_dict['scores'][0]:.2f}%")
+        st.write(f"**Left Mirror Checks:** {st.session_state.results_dict['scores'][1]:.2f}%")
+        st.write(f"**Right Mirror Checks:** {st.session_state.results_dict['scores'][2]:.2f}%")
+        st.write(f"**Rearview Mirror Checks:** {st.session_state.results_dict['scores'][3]:.2f}%")
+
 
 
 if tips_btn:
-    st.session_state.processing = False
-    st.session_state.review_mode = False
-    st.session_state.preview_mode = False
-    st.session_state.llm_mode = True
+    if not st.session_state.results_dict or 'scores' not in st.session_state.results_dict:
+        st.warning("⚠️ No scores available. Please process the data first.")
+    else:
+        st.session_state.processing = False
+        st.session_state.review_mode = False
+        st.session_state.preview_mode = False
+        st.session_state.llm_mode = True
 
-    overall_score = st.session_state.results_dict['scores'][0]
-    left_mirror_score = st.session_state.results_dict['scores'][1]
-    right_mirror_score = st.session_state.results_dict['scores'][2]
-    rearview_mirror_score = st.session_state.results_dict['scores'][3]
+        overall_score = st.session_state.results_dict['scores'][0]
+        left_mirror_score = st.session_state.results_dict['scores'][1]
+        right_mirror_score = st.session_state.results_dict['scores'][2]
+        rearview_mirror_score = st.session_state.results_dict['scores'][3]
 
-    prompt = (
-    f"""You are an expert driving instructor. Based on the session data below, "
-    identify which mirror-check behaviors are weak (below 90%) and give 3 specific tips "
-    only to improve those weak areas:\n"
-    - Left Wing Mirror Checks Every 30s: {left_mirror_score}\n"
-    - Right Wing Mirror Checks Every 30s: {right_mirror_score}\n"
-    - Rearview Mirror Checks Every 30s: {rearview_mirror_score}\n"
-    - Overall Score: {overall_score}\n"
-    Focus only on the weakest area. Provide actionable, specific, concise tips """)
+        prompt = (
+        f"""You are an expert driving instructor. Based on the session data below, "
+        identify which mirror-check behaviors are weak (below 90%) and give 3 specific tips "
+        only to improve those weak areas:\n"
+        - Left Wing Mirror Checks Every 30s: {left_mirror_score}\n"
+        - Right Wing Mirror Checks Every 30s: {right_mirror_score}\n"
+        - Rearview Mirror Checks Every 30s: {rearview_mirror_score}\n"
+        - Overall Score: {overall_score}\n"
+        Focus only on the weakest area. Provide actionable, specific, concise tips """)
 
-    with st.spinner("🧠 Generating tips..."):
-        output = llm(prompt, max_tokens=230)
-        st.session_state.tips_output = output["choices"][0]["text"].strip()
+        with st.spinner("🧠 Generating tips..."):
+            output = llm(prompt, max_tokens=230)
+            st.session_state.tips_output = output["choices"][0]["text"].strip()
     
     
 
@@ -292,17 +301,7 @@ if review_btn:
                 st.session_state.selected_mistake = mistake_label
                 st.session_state.play_video = True
 
-if st.session_state.get("play_video", False):
-    mistake_label = st.session_state.selected_mistake
-    start_idx, end_idx = st.session_state.results_dict['mistake_sections'][[m[2] for m in st.session_state.results_dict['mistake_sections']].index(mistake_label)][:2]
-    frames = st.session_state.results_dict['overlays'][start_idx:end_idx]
-    frame_container = st.empty()
 
-    for frame in frames:
-        frame_container.image(frame, channels="RGB")
-        time.sleep(0.05)
-
-    st.session_state.play_video = False  # Prevent replay on next rerun
 
 
 
