@@ -144,10 +144,11 @@ class DataProcessor:
         imu_gyro_z_samples = [g[5] for g in imu_vals]
 
         vde.get_object_dets(progress_callback=callbacks.get('object_detection'))
+        video_save_path = os.path.join('/',*split, 'video')
         vde.evaluate_driving(list(vde.result['rgb'].values()),vde.result['smoothed_gaze'],vde.result['object_detections'],
-                             imu_gyro_x_samples,imu_gyro_y_samples,imu_gyro_z_samples, progress_callback=callbacks.get('driving_evaluation'))
+                             imu_gyro_x_samples,imu_gyro_y_samples,imu_gyro_z_samples,video_save_path, progress_callback=callbacks.get('driving_evaluation'))
 
-        vde.score_driver(vde.num_frames_rgb, vde.result['joined_intervals'])
+        vde.score_driver(vde.num_frames_rgb, vde.result['joined_intervals'], video_save_path)
         # vde.get_GPS_data()
 
         # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'

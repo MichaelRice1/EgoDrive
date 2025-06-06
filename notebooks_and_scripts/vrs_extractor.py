@@ -1101,7 +1101,7 @@ class VRSDataExtractor():
 
         return blended, xmin, ymin, xmax, ymax
 
-    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz, progress_callback=None):
+    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz,video_save_path, progress_callback=None):
         consecutive_frames_threshold = 8
         overlays = []
 
@@ -1197,8 +1197,22 @@ class VRSDataExtractor():
             if progress_callback:
                 progress_callback(i + 1, len(frames))
 
-            overlays.append(cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+            overlays.append(overlay)
         
+        # Create an MP4 video from overlays
+        if not os.path.exists(video_save_path):
+            os.makedirs(video_save_path)
+        video_save_path = os.path.join(video_save_path, "driving_evaluation.mp4")
+        height, width, _ = overlays[0].shape
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(video_save_path, fourcc, 15, (width, height))
+
+        for overlay in overlays:
+            video_writer.write(overlay)
+
+        video_writer.release()
+        
+        self.result['video_path'] = video_save_path
         self.result['overlays'] = overlays
         self.result['action_tracking'] = action_tracking
         self.result['joined_intervals'] = self.join_action_interval(action_tracking)
@@ -1230,7 +1244,7 @@ class VRSDataExtractor():
         
         return joined_actions        
 
-    def score_driver(self, num_frames, action_intervals):
+    def score_driver(self, num_frames, action_intervals, video_save_path):
         """
         Score the driving based on detected actions.
         Returns an overall score between 0 and 1, as well as other statistics.
@@ -1244,8 +1258,6 @@ class VRSDataExtractor():
 
         segment_intervals = {i: [] for i in range(0, num_frames, 30*15)}
         
-        # print(segment_intervals)
-
         for action, intervals in action_intervals.items():
             for start, end in intervals:
                 for bin_start in segment_intervals.keys():
@@ -1278,6 +1290,24 @@ class VRSDataExtractor():
         score = round((lwm_percent + rwm_percent + rvm_percent) / 3, 4)
 
         self.result['scores'] = (score, lwm_percent, rwm_percent, rvm_percent)
+        frames = self.result['rgb']
+        frames = list(frames.values())
+        mistake_video_paths = []
+
+        for m in mistake_sections:
+            start, end, reason = m
+            mistake_frames = frames[start:end]
+            mistake_video_path = os.path.join(video_save_path, f'{reason}.mp4')
+            height, width, _ = mistake_frames[0].shape
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            video_writer = cv2.VideoWriter(mistake_video_path, fourcc, 15, (width, height))
+            for frame in mistake_frames:
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                video_writer.write(frame)
+            video_writer.release()
+            mistake_video_paths.append(mistake_video_path)
+        
+        self.result['mistake_video_paths'] = mistake_video_paths
         self.result['mistake_sections'] = mistake_sections
         
 

@@ -214,19 +214,14 @@ if preview_btn:
     st.session_state.review_mode = False 
     st.session_state.llm_mode = False
     st.session_state.preview_mode = True
-    
+
+    vid = open(st.session_state.results_dict['video_path'], 'rb')
+    video_bytes = vid.read()
 
     if st.session_state.results_dict is None or not st.session_state.results_dict:
         st.warning("⚠️ No VRS file found to preview.")
     else:
-        frames = st.session_state.results_dict['overlays']
-        frame_delay = 0.05
-        frame_container = st.empty()    
-
-        st.write("📸 Previewing session frames:")
-        for frame in frames:
-            frame_container.image(frame, channels="RGB")
-            time.sleep(frame_delay)
+        st.video(video_bytes)
 
 
 
@@ -283,23 +278,37 @@ if review_btn:
     if not st.session_state.results_dict or 'mistake_sections' not in st.session_state.results_dict:
         st.warning("⚠️ No mistakes found in the session. Please process the data first.")
     else:
-
-
         st.session_state.preview_mode = False
         st.session_state.llm_mode = False
         st.session_state.review_mode = True
-        mistake_sections = st.session_state.results_dict['mistake_sections']
-        mistake_map = {m[2]: (m[0], m[1]) for m in mistake_sections}
 
-        if not mistake_sections:
+        mistake_video_paths = st.session_state.results_dict.get('mistake_video_paths', [])
+
+        if not mistake_video_paths:
             st.warning("⚠️ No mistakes found in this session.")
         else:
-            mistake_label = st.selectbox("Select a mistake to review:", list(mistake_map.keys()), index=0)
+            mistakes = [m.split('/')[-1].split('.')[0] for m in mistake_video_paths]
 
-            # If the selection changed, update and trigger replay
-            if st.session_state.selected_mistake != mistake_label:
-                st.session_state.selected_mistake = mistake_label
-                st.session_state.play_video = True
+            # Use session_state to preserve selected label
+            if 'selected_mistake_label' not in st.session_state:
+                st.session_state.selected_mistake_label = mistakes[0]
+
+            st.session_state.selected_mistake_label = st.selectbox(
+                "Select a mistake to review:",
+                mistakes,
+                index=mistakes.index(st.session_state.selected_mistake_label)
+            )
+
+            selected_video_path = next(
+                (path for path in mistake_video_paths if st.session_state.selected_mistake_label in path),
+                None
+            )
+
+            if selected_video_path:
+                with open(selected_video_path, 'rb') as video_file:
+                    video_bytes = video_file.read()
+                st.video(video_bytes)
+
 
 
 
