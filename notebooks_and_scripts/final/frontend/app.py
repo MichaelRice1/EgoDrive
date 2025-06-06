@@ -269,7 +269,7 @@ if tips_btn:
         Focus only on the weakest area. Provide actionable, specific, concise tips """)
 
         with st.spinner("🧠 Generating tips..."):
-            output = llm(prompt, max_tokens=230)
+            output = llm(prompt, max_tokens=300)
             st.session_state.tips_output = output["choices"][0]["text"].strip()
     
     
@@ -282,32 +282,58 @@ if review_btn:
         st.session_state.llm_mode = False
         st.session_state.review_mode = True
 
-        mistake_video_paths = st.session_state.results_dict.get('mistake_video_paths', [])
+if st.session_state.review_mode:
+    mistake_video_paths = st.session_state.results_dict.get('mistake_video_paths', [])
 
-        if not mistake_video_paths:
-            st.warning("⚠️ No mistakes found in this session.")
+    if not mistake_video_paths:
+        st.warning("⚠️ No mistakes found in this session.")
+    else:
+        mistakes = [m.split('/')[-1].split('.')[0] for m in mistake_video_paths]
+
+        # Initialize selected mistake if not already set or if it's not valid
+        if ('selected_mistake_label' not in st.session_state or 
+            st.session_state.selected_mistake_label not in mistakes):
+            st.session_state.selected_mistake_label = mistakes[0]
+
+        # Create the selectbox with a unique key and proper state management
+        current_selection = st.selectbox(
+            "Select a mistake to review:",
+            options=mistakes,
+            index=mistakes.index(st.session_state.selected_mistake_label),
+            key="mistake_selector"  # Add unique key
+        )
+
+        # Update session state only if selection actually changed
+        if current_selection != st.session_state.selected_mistake_label:
+            st.session_state.selected_mistake_label = current_selection
+
+        # Find and display the selected video
+        selected_video_path = None
+        for path in mistake_video_paths:
+            if st.session_state.selected_mistake_label in path:
+                selected_video_path = path
+                break
+
+        if selected_video_path and os.path.exists(selected_video_path):
+            try:
+                # Add some spacing and a container for better layout
+                st.markdown("---")
+                st.subheader(f"Reviewing: {st.session_state.selected_mistake_label}")
+                
+                # Show loading message for large videos
+                with st.spinner("Loading video..."):
+                    with open(selected_video_path, 'rb') as video_file:
+                        video_bytes = video_file.read()
+                
+                # Use a container to ensure consistent layout
+                video_container = st.container()
+                with video_container:
+                    st.video(video_bytes)
+                    
+            except Exception as e:
+                st.error(f"❌ Error loading video: {e}")
         else:
-            mistakes = [m.split('/')[-1].split('.')[0] for m in mistake_video_paths]
-
-            # Use session_state to preserve selected label
-            if 'selected_mistake_label' not in st.session_state:
-                st.session_state.selected_mistake_label = mistakes[0]
-
-            st.session_state.selected_mistake_label = st.selectbox(
-                "Select a mistake to review:",
-                mistakes,
-                index=mistakes.index(st.session_state.selected_mistake_label)
-            )
-
-            selected_video_path = next(
-                (path for path in mistake_video_paths if st.session_state.selected_mistake_label in path),
-                None
-            )
-
-            if selected_video_path:
-                with open(selected_video_path, 'rb') as video_file:
-                    video_bytes = video_file.read()
-                st.video(video_bytes)
+            st.error("❌ Selected video file not found.")
 
 
 

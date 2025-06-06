@@ -1272,7 +1272,7 @@ class VRSDataExtractor():
                 rwm += 1
                 lwm += 1
                 rvm += 1
-                mistake_sections.append((seg, seg + 450, f'No mirror checks detected from aeconds {seg/15} to {seg/15 + 30}.'))
+                mistake_sections.append((seg, seg + 450, f'No mirror checks detected from seconds {seg/15} to {seg/15 + 30}.'))
                 continue
             actions = [a[0] for a in actions]
 
@@ -1303,7 +1303,7 @@ class VRSDataExtractor():
             video_writer = cv2.VideoWriter(mistake_video_path, fourcc, 15, (width, height))
             for frame in mistake_frames:
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                video_writer.write(frame)
+                video_writer.write(rgb_frame)
             video_writer.release()
             mistake_video_paths.append(mistake_video_path)
         
