@@ -997,7 +997,7 @@ class VRSDataExtractor():
             4: 'Steering Wheel'
         }
 
-        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/train/weights/best.pt'
+        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/datasetv2_yolov11/weights/best.pt'
         model = YOLO(model_weight_path)
         results = []
         device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
@@ -1012,7 +1012,7 @@ class VRSDataExtractor():
 
             if result[0].boxes is not None:
                 for j in range(len(result[0].boxes.xyxy)):
-                    if result[0].boxes.conf[j] > 0.4:
+                    if result[0].boxes.conf[j] > 0.3:
                         image_dets.append({
                             'class': classes[int(result[0].boxes.cls[j])],
                             'confidence': result[0].boxes.conf[j],
