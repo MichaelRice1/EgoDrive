@@ -994,7 +994,9 @@ class VRSDataExtractor():
             1: 'Left Wing Mirror',
             2: 'Rearview Mirror',
             3: 'Right Wing Mirror',
-            4: 'Steering Wheel'
+            4: 'Steering Wheel',
+            5: 'Gear Stick',
+            6: 'Mobile Phone'
         }
 
         model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/datasetv2_yolov11/weights/best.pt'
@@ -1012,7 +1014,7 @@ class VRSDataExtractor():
 
             if result[0].boxes is not None:
                 for j in range(len(result[0].boxes.xyxy)):
-                    if result[0].boxes.conf[j] > 0.3:
+                    if result[0].boxes.conf[j] > 0.25:
                         image_dets.append({
                             'class': classes[int(result[0].boxes.cls[j])],
                             'confidence': result[0].boxes.conf[j],
@@ -1108,7 +1110,8 @@ class VRSDataExtractor():
         action_tracking = {
             "Left Wing Mirror": [],
             "Right Wing Mirror": [],
-            "Rearview Mirror": []
+            "Rearview Mirror": [],
+            "Mobile Phone": []
         }
 
         mirror_counters = {
@@ -1162,9 +1165,15 @@ class VRSDataExtractor():
             for b in od:
                 x1, y1, x2, y2 = b['bounding_box']
                 bbox_area = (x2 - x1) * (y2 - y1)
-                mirror_type = b['class']
+                label = b['class']
 
-                if "Mirror" in mirror_type:
+                if "Phone" in label:
+                    action_tracking[label].append(i)
+                    cv2.putText(overlay, f"Mobile Phone In Use", (25, 75),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+
+                if "Mirror" in label:
                     width, height = x2 - x1, y2 - y1
                     x1 = x1.clone() - (0.3 * width)
                     x2 = x2.clone() + (0.3 * width)
@@ -1176,7 +1185,7 @@ class VRSDataExtractor():
                     IoU = intersection_area / union_area if union_area > 0 else 0
 
                     if IoU > 0.25:
-                        gaze_on_mirror[mirror_type] = True
+                        gaze_on_mirror[label] = True
 
             for mirror in mirror_counters:
                 if gaze_on_mirror[mirror]:
@@ -1255,6 +1264,7 @@ class VRSDataExtractor():
         rwm = 0
         lwm = 0
         rvm = 0
+        mp = 0
 
         segment_intervals = {i: [] for i in range(0, num_frames, 30*15)}
         
@@ -1274,6 +1284,10 @@ class VRSDataExtractor():
                 rvm += 1
                 mistake_sections.append((seg, seg + 450, f'No mirror checks detected from seconds {seg/15} to {seg/15 + 30}.'))
                 continue
+            if "Phone" in actions:
+                mp += 1
+                mistake_sections.append((seg, seg + 450, 'Mobile phone usage detected.'))
+                continue
             actions = [a[0] for a in actions]
 
             if "Left Wing Mirror" not in actions:
@@ -1289,7 +1303,7 @@ class VRSDataExtractor():
         
         score = round((lwm_percent + rwm_percent + rvm_percent) / 3, 4)
 
-        self.result['scores'] = (score, lwm_percent, rwm_percent, rvm_percent)
+        self.result['scores'] = (score, lwm_percent, rwm_percent, rvm_percent, mp)
         frames = self.result['rgb']
         frames = list(frames.values())
         mistake_video_paths = []

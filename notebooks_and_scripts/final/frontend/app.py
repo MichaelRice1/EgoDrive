@@ -241,6 +241,7 @@ if score_btn:
         st.write(f"**Left Mirror Checks:** {st.session_state.results_dict['scores'][1]:.2f}%")
         st.write(f"**Right Mirror Checks:** {st.session_state.results_dict['scores'][2]:.2f}%")
         st.write(f"**Rearview Mirror Checks:** {st.session_state.results_dict['scores'][3]:.2f}%")
+        st.write(f"**Mobile Phone Used ** {st.session_state.results_dict['scores'][4]} times")
 
 
 
@@ -257,6 +258,7 @@ if tips_btn:
         left_mirror_score = st.session_state.results_dict['scores'][1]
         right_mirror_score = st.session_state.results_dict['scores'][2]
         rearview_mirror_score = st.session_state.results_dict['scores'][3]
+        mobile_phone_count = st.session_state.results_dict['scores'][4]
 
         prompt = (
         f"""You are an expert driving instructor. Based on the session data below, "
