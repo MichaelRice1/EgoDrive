@@ -241,7 +241,7 @@ if score_btn:
         st.write(f"**Left Mirror Checks:** {st.session_state.results_dict['scores'][1]:.2f}%")
         st.write(f"**Right Mirror Checks:** {st.session_state.results_dict['scores'][2]:.2f}%")
         st.write(f"**Rearview Mirror Checks:** {st.session_state.results_dict['scores'][3]:.2f}%")
-        st.write(f"**Mobile Phone Used ** {st.session_state.results_dict['scores'][4]} times")
+        st.write(f"**Mobile Phone Used:** {st.session_state.results_dict['scores'][4]} times%")
 
 
 

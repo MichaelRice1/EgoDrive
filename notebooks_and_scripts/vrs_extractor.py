@@ -992,13 +992,12 @@ class VRSDataExtractor():
         classes = {
             0: 'Gear Stick',
             1: 'Left Wing Mirror',
-            2: 'Rearview Mirror',
-            3: 'Right Wing Mirror',
-            4: 'Steering Wheel',
-            5: 'Gear Stick',
-            6: 'Mobile Phone'
+            2: 'Mobile Phone',
+            3: 'Rearview Mirror',
+            4: 'Right Wing Wheel',
+            5: 'Steering Wheel'
         }
-
+        
         model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/datasetv2_yolov11/weights/best.pt'
         model = YOLO(model_weight_path)
         results = []
@@ -1243,11 +1242,22 @@ class VRSDataExtractor():
                 if f == end + 1:  # Consecutive frame
                     end = f
                 else:
-                    if (end - start) > 5:
-                        intervals.append((start, end))
+                    if action == "Mobile Phone":
+                        if intervals:
+                            if start > intervals[-1][1] + 10:
+                                intervals.append([start, end])
+                            else:
+                                intervals[-1][1] = end 
+                        else:
+                            intervals.append([start, end])
+                    else:
+                        if (end - start) > 5:
+                            intervals.append([start, end])
 
                     start = f
                     end = f
+
+             # Extend last interval to include the last frame
             intervals.append((start, end))  # Add last interval
             joined_actions[action] = intervals
         
@@ -1264,7 +1274,18 @@ class VRSDataExtractor():
         rwm = 0
         lwm = 0
         rvm = 0
-        mp = 0
+        mistake_sections = []
+        num_mp_frames = 0
+
+
+        mp_ints = action_intervals.get("Mobile Phone", [])
+
+        if mp_ints:
+            for start, end in mp_ints:
+                num_mp_frames += (end - start)
+                mistake_sections.append((start, end, f'Mobile phone usage, seconds {int(start/15)} to {int(end/15)}'))
+            
+            
 
         segment_intervals = {i: [] for i in range(0, num_frames, 30*15)}
         
@@ -1276,17 +1297,12 @@ class VRSDataExtractor():
                         segment_intervals[bin_start].append((action,start, end))
                         break
         
-        mistake_sections = []
         for seg, actions in segment_intervals.items():
             if not actions:
                 rwm += 1
                 lwm += 1
                 rvm += 1
-                mistake_sections.append((seg, seg + 450, f'No mirror checks detected from seconds {seg/15} to {seg/15 + 30}.'))
-                continue
-            if "Phone" in actions:
-                mp += 1
-                mistake_sections.append((seg, seg + 450, 'Mobile phone usage detected.'))
+                mistake_sections.append((seg, seg + 450, f'No mirror checks, seconds {int(seg/15)} to {int(seg/15) + 30}'))
                 continue
             actions = [a[0] for a in actions]
 
@@ -1300,8 +1316,12 @@ class VRSDataExtractor():
         lwm_percent = round((lwm / len(segment_intervals)) * 100 , 4)
         rwm_percent = round((rwm / len(segment_intervals)) * 100 , 4)
         rvm_percent = round((rvm / len(segment_intervals)) * 100 , 4)
+
+        mp = int((num_mp_frames / num_frames) * 100 if num_frames > 0 else 0)
         
         score = round((lwm_percent + rwm_percent + rvm_percent) / 3, 4)
+
+        
 
         self.result['scores'] = (score, lwm_percent, rwm_percent, rvm_percent, mp)
         frames = self.result['rgb']
