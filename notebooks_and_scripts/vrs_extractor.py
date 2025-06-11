@@ -822,7 +822,7 @@ class VRSDataExtractor():
         point_undistorted = dst_calib.project(ray)
         return point_undistorted
     
-    def annotate(self, frames_dict, actions_csv, fps=15):
+    def annotate(self, frames_dict, actions_csv_path , blur_csv_path , fps=15):
         """
         Annotate frames with:
         - Blur labels (face, license plate)
@@ -834,7 +834,13 @@ class VRSDataExtractor():
             '0': 'checking left wing mirror',
             '1': 'checking right wing mirror',
             '2': 'checking rear view mirror',
-            '3': 'nothing'
+            '3': 'left turn',
+            '4': 'right turn',
+            '5': 'left lane change',
+            '6': 'right lane change',
+            '7': 'mobile phone usage',
+            '8': 'driving',
+            '9': 'idle'
         }
 
         LEFT_KEY = 63234 if os.name == 'posix' else 2424832
@@ -844,29 +850,19 @@ class VRSDataExtractor():
         FRAME_INTERVAL = 1.0 / fps
 
         # Initialize CSVs
-        for csv_file, headers in [
-            (actions_csv, ['start_frame', 'end_frame', 'action'])
-        ]:
-            if not os.path.exists(csv_file):
-                with open(csv_file, 'w', newline='') as f:
-                    csv.writer(f).writerow(headers)
+        actions_header = ['start_frame', 'end_frame', 'action']
+        blur_header = ['start_frame', 'end_frame', 'type']
 
-        # Load existing actions
-        existing_actions = []
-        if os.path.exists(actions_csv):
-            with open(actions_csv, 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    existing_actions.append({
-                        'start': int(row['start_frame']),
-                        'end': int(row['end_frame']),
-                        'action': row['action']
-                    })
+        with open(actions_csv_path, 'w', newline='') as action:
+            csv.writer(action).writerow(actions_header)
+        with open(blur_csv_path, 'w', newline='') as blur:
+            csv.writer(blur).writerow(blur_header)
+
 
         sorted_ts = sorted(frames_dict.keys())
-        gaze_points = list(self.result['gaze'].values())
-        src_calib = calibration.get_linear_camera_calibration(1408, 1408, 608.611)
-        dst_calib = calibration.get_linear_camera_calibration(512, 512, 170)
+        gaze_points = list(self.result['smoothed_gaze'].values())
+        # src_calib = calibration.get_linear_camera_calibration(1408, 1408, 608.611)
+        # dst_calib = calibration.get_linear_camera_calibration(512, 512, 170)
 
         if not sorted_ts:
             print("No frames to label!")
@@ -878,8 +874,6 @@ class VRSDataExtractor():
 
         active_actions = {}
 
-        current_env_label = None
-        env_label_start_idx = None
 
         window_name = "Frame Labeler"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
