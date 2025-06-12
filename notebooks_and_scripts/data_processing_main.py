@@ -136,6 +136,8 @@ class DataProcessor:
         if os.path.exists(hand_path):
             vde.get_hand_data(hand_path)
 
+        
+
 
         vde.get_IMU_data()
         imu_vals =  list(vde.result['imu_right'].values())
@@ -145,8 +147,17 @@ class DataProcessor:
 
         vde.get_object_dets(progress_callback=callbacks.get('object_detection'))
         video_save_path = os.path.join('/',*split, 'video')
+        hand_data = list(vde.result['hand_landmarks'].values())
+
+
+        # left_landmarks = [h[-2] for h in hand_data]
+        # right_landmarks = [h[-1] for h in hand_data]
+
+        
+    
+        
         vde.evaluate_driving(list(vde.result['rgb'].values()),vde.result['smoothed_gaze'],vde.result['object_detections'],
-                             imu_gyro_x_samples,imu_gyro_y_samples,imu_gyro_z_samples,video_save_path, progress_callback=callbacks.get('driving_evaluation'))
+                             imu_gyro_x_samples,imu_gyro_y_samples,imu_gyro_z_samples,hand_data,video_save_path, progress_callback=callbacks.get('driving_evaluation'))
 
         vde.score_driver(vde.num_frames_rgb, vde.result['joined_intervals'], video_save_path)
         # vde.get_GPS_data()

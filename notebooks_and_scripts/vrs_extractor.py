@@ -12,6 +12,7 @@ import io
 from ultralytics import YOLO
 from typing import Dict, List, Optional
 from filterpy.kalman import KalmanFilter
+import matplotlib.pyplot as plt
 
 '''
 import mediapipe as mp
@@ -296,7 +297,7 @@ class VRSDataExtractor():
                         rgb_camera_calibration,
                         depth_m=gaze_point.depth
                     )
-                
+                gaze_projection
                 gaze_points[ts] = {
                     "projection": gaze_projection,
                     'depth': gaze_point.depth,
@@ -505,17 +506,19 @@ class VRSDataExtractor():
                 
         
                 hand_landmarks[ts] = {
-                    "left_wrist": left_wrist,
-                    "left_palm": left_palm,
-                    "right_wrist": right_wrist,
-                    "right_palm": right_palm,
-                    "left_wrist_normal": left_wrist_normal,
-                    "left_palm_normal": left_palm_normal,
-                    "right_wrist_normal": right_wrist_normal,
-                    "right_palm_normal": right_palm_normal,
-                    "left_landmarks": left_landmarks,
-                    "right_landmarks": right_landmarks,
+                    "left_wrist": left_wrist ,
+                    "left_palm": left_palm ,
+                    "right_wrist": right_wrist , 
+                    "right_palm": right_palm ,
+                    "left_wrist_normal": left_wrist_normal ,
+                    "left_palm_normal": left_palm_normal ,
+                    "right_wrist_normal": right_wrist_normal ,
+                    "right_palm_normal": right_palm_normal ,
+                    "left_landmarks": left_landmarks ,
+                    "right_landmarks": right_landmarks 
                     }
+        
+
                 
         self.result['hand_landmarks'] = hand_landmarks
 
@@ -1096,7 +1099,7 @@ class VRSDataExtractor():
 
         return blended, xmin, ymin, xmax, ymax
 
-    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz,video_save_path, progress_callback=None):
+    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz,hand_lm, video_save_path, progress_callback=None):
         consecutive_frames_threshold = 8
         overlays = []
 
@@ -1115,7 +1118,8 @@ class VRSDataExtractor():
 
         direction = "Forward"
 
-        for i, (frame, sg, od) in enumerate(zip(frames, smoothed_gaze, object_dets)):
+        for i, (frame, sg, od, hlm) in enumerate(zip(frames, smoothed_gaze, object_dets, hand_lm)):
+            
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             sg = int(sg[0] * (512 / 1408)), int(sg[1] * (512 / 1408))
 
@@ -1132,7 +1136,28 @@ class VRSDataExtractor():
             max_gy = gy_samples[np.argmax(np.abs(gy_samples))]
             max_gz = gz_samples[np.argmax(np.abs(gz_samples))]
 
+            left_landmarks = hlm['left_landmarks']
+            right_landmarks = hlm['right_landmarks']
+            
+            scale = 512 / 1408
+            image_width = 512
 
+
+            if left_landmarks is not None:
+                left_landmarks = [
+                    (image_width - l[1] * scale, l[0] * scale) if l is not None else None
+                    for l in left_landmarks
+                ]
+
+            if right_landmarks is not None:
+                right_landmarks = [
+                    (image_width - r[1] * scale, r[0] * scale) if r is not None else None
+                    for r in right_landmarks
+                ]
+
+                
+            overlay = self.draw_landmarks_and_connections(overlay,left_landmarks,right_landmarks,mps.hand_tracking.kHandJointConnections)
+            
 
             if direction == "Forward":
                 if max_gx > 1.0:
@@ -1218,6 +1243,56 @@ class VRSDataExtractor():
         self.result['overlays'] = overlays
         self.result['action_tracking'] = action_tracking
         self.result['joined_intervals'] = self.join_action_interval(action_tracking)
+
+    def draw_landmarks_and_connections(self, image, left_landmarks, right_landmarks, connections):
+        def draw_point(img, point, color):
+            cv2.circle(img, (int(point[0]), int(point[1])), 5, color, -1)
+
+        def draw_line(img, point1, point2, color):
+            cv2.line(img, (int(point1[0]), int(point1[1])), (int(point2[0]), int(point2[1])), color, 2)
+
+        if left_landmarks:
+            for left_landmark in left_landmarks:
+                if left_landmark is not None:
+                    draw_point(image, left_landmark, (255, 0, 0))  # Blue for left landmarks
+            for connection in connections:
+                if left_landmarks[int(connection[0])] is not None and left_landmarks[int(connection[1])] is not None:
+                    draw_line(image, left_landmarks[int(connection[0])], left_landmarks[int(connection[1])], (255, 0, 0))
+
+        if right_landmarks:
+            for right_landmark in right_landmarks:
+                if right_landmark is not None:
+                    draw_point(image, right_landmark, (0, 0, 255))  # Red for right landmarks
+            for connection in connections:
+                if right_landmarks[int(connection[0])] is not None and right_landmarks[int(connection[1])] is not None:
+                    draw_line(image, right_landmarks[int(connection[0])], right_landmarks[int(connection[1])], (0, 0, 255))
+
+        return image
+
+    def plot_wrists_and_palms(self, plt,left_wrist,left_palm,right_wrist,right_palm,left_wrist_normal_tip,left_palm_normal_tip,right_wrist_normal_tip,right_palm_normal_tip,img_height):
+        
+        def plot_point(point, color):
+            plt.plot(img_height - 0.5 - point[1], point[0] + 0.5, ".", c=color, mew=1, ms=15)
+
+        def plot_arrow(point, vector, color):
+            plt.arrow(img_height - 0.5 - point[1], point[0] + 0.5, -vector[1], vector[0], color=color)
+
+        if left_wrist is not None:
+            plot_point(left_wrist, "blue")
+        if left_palm is not None:
+            plot_point(left_palm, "blue")
+        if right_wrist is not None:
+            plot_point(right_wrist, "red")
+        if right_palm is not None:
+            plot_point(right_palm, "red")
+        if left_wrist_normal_tip is not None and left_wrist is not None:
+            plot_arrow(left_wrist, left_wrist_normal_tip - left_wrist, "blue")
+        if left_palm_normal_tip is not None and left_palm is not None:
+            plot_arrow(left_palm, left_palm_normal_tip - left_palm, "blue")
+        if right_wrist_normal_tip is not None and right_wrist is not None:
+            plot_arrow(right_wrist, right_wrist_normal_tip - right_wrist, "red")
+        if right_palm_normal_tip is not None and right_palm is not None:
+            plot_arrow(right_palm, right_palm_normal_tip - right_palm, "red")
 
     def join_action_interval(self, action_tracking):
         joined_actions = {}
