@@ -169,7 +169,7 @@ class VRSDataExtractor():
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)[0].to_numpy_array()
             image_pil = Image.fromarray(image_data)  
             image_pil = image_pil.rotate(-90) 
-            image_pil = image_pil.resize((512, 512)) 
+            #image_pil = image_pil.resize((512, 512)) 
 
             # Save to buffer (optional, only if needed)
             # image_pil.save(buffer, format="PNG")
@@ -979,8 +979,6 @@ class VRSDataExtractor():
 
         finally:
             cv2.destroyAllWindows()
-
-
 
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
         """Records labels for all frames passed during advance"""
