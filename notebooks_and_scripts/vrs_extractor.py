@@ -825,14 +825,7 @@ class VRSDataExtractor():
         point_undistorted = dst_calib.project(ray)
         return point_undistorted
     
-    def annotate(self, frames_dict, actions_csv_path , blur_csv_path , fps=15):
-        """
-        Annotate frames with:
-        - Blur labels (face, license plate)
-        - Driving actions
-        - Environment labels (rural, town, city, motorway)
-        """
-
+    def annotate(self, frames_dict, actions_csv_path, blur_csv_path, fps=15):
         action_label_map = {
             '0': 'checking left wing mirror',
             '1': 'checking right wing mirror',
@@ -846,26 +839,19 @@ class VRSDataExtractor():
             '9': 'idle'
         }
 
+        blur_label_map = {
+            'f': 'face',
+            'l': 'license plate'
+        }
+
         LEFT_KEY = 63234 if os.name == 'posix' else 2424832
         RIGHT_KEY = 63235 if os.name == 'posix' else 2555904
         ESC_KEY = 27
         EXIT_KEY = ord('x')
         FRAME_INTERVAL = 1.0 / fps
 
-        # Initialize CSVs
-        actions_header = ['start_frame', 'end_frame', 'action']
-        blur_header = ['start_frame', 'end_frame', 'type']
-
-        with open(actions_csv_path, 'w', newline='') as action:
-            csv.writer(action).writerow(actions_header)
-        with open(blur_csv_path, 'w', newline='') as blur:
-            csv.writer(blur).writerow(blur_header)
-
-
         sorted_ts = sorted(frames_dict.keys())
-        gaze_points = list(self.result['smoothed_gaze'].values())
-        # src_calib = calibration.get_linear_camera_calibration(1408, 1408, 608.611)
-        # dst_calib = calibration.get_linear_camera_calibration(512, 512, 170)
+        gaze_points = list(self.result['personalized_gaze'].values())
 
         if not sorted_ts:
             print("No frames to label!")
@@ -875,15 +861,19 @@ class VRSDataExtractor():
         is_playing = False
         last_frame_time = time()
 
-        active_actions = {}
+        num_frames = len(sorted_ts)
+        frame_labels = {i: set() for i in range(num_frames)}
+        blur_labels = {i: set() for i in range(num_frames)}
 
+        current_actions = set()
+        current_blurs = set()
 
         window_name = "Frame Labeler"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-        def write_csv_row(csv_file, row):
-            with open(csv_file, 'a', newline='') as f:
-                csv.writer(f).writerow(row)
+        def propagate_labels(start_idx, label_set, label_dict):
+            for i in range(start_idx, num_frames):
+                label_dict[i] = set(label_set)
 
         try:
             while True:
@@ -903,20 +893,17 @@ class VRSDataExtractor():
                 projection = gaze_points[current_idx]['projection'] * (512 / 1408)
                 depth = gaze_points[current_idx]['depth']
 
-                # Check existing labels
-                active_csv_actions = [
-                    entry['action'] for entry in existing_actions
-                    if entry['start'] <= current_idx <= entry['end']
-                ]
+                # Show current labels (inherited)
+                active_actions = frame_labels[current_idx]
+                active_blurs = blur_labels[current_idx]
 
                 status = []
                 if is_playing:
                     status.append(f"[PLAYING {fps}FPS]")
-                for action_key in active_actions:
-                    status.append(action_label_map[action_key])
-                for act in active_csv_actions:
-                    if act not in status:
-                        status.append(act)
+                if active_actions:
+                    status.extend(list(active_actions))
+                if active_blurs:
+                    status.extend([f"blur:{b}" for b in active_blurs])
 
                 cv2.putText(frame, f"ACTIVE: {', '.join(status) or 'None'}",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
@@ -945,21 +932,55 @@ class VRSDataExtractor():
                 else:
                     try:
                         char_key = chr(key).lower()
+                        # Action label toggle
                         if char_key in action_label_map:
-                            if char_key in active_actions:
-                                write_csv_row(actions_csv, [active_actions[char_key], current_idx, action_label_map[char_key]])
-                                del active_actions[char_key]
+                            label = action_label_map[char_key]
+                            if label in current_actions:
+                                current_actions.remove(label)
                             else:
-                                active_actions[char_key] = current_idx
+                                current_actions.add(label)
+                            propagate_labels(current_idx, current_actions, frame_labels)
+
+                        # Blur label toggle
+                        elif char_key in blur_label_map:
+                            blur = blur_label_map[char_key]
+                            if blur in current_blurs:
+                                current_blurs.remove(blur)
+                            else:
+                                current_blurs.add(blur)
+                            propagate_labels(current_idx, current_blurs, blur_labels)
+
                     except ValueError:
                         pass
 
-            # Final writes on exit
-            for action_key, start_frame in active_actions.items():
-                write_csv_row(actions_csv, [start_frame, current_idx, action_label_map[action_key]])
+            # Write to CSV
+            def write_contiguous_blocks(label_dict, path, label_type):
+                with open(path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['start_frame', 'end_frame', label_type])
+
+                    prev_labels = None
+                    start_idx = 0
+                    for idx in range(num_frames):
+                        current_labels = label_dict[idx]
+                        if current_labels != prev_labels:
+                            if prev_labels:
+                                for lbl in prev_labels:
+                                    writer.writerow([start_idx, idx - 1, lbl])
+                            start_idx = idx
+                            prev_labels = current_labels
+
+                    if prev_labels:
+                        for lbl in prev_labels:
+                            writer.writerow([start_idx, num_frames - 1, lbl])
+
+            write_contiguous_blocks(frame_labels, actions_csv_path, 'action')
+            write_contiguous_blocks(blur_labels, blur_csv_path, 'type')
 
         finally:
             cv2.destroyAllWindows()
+
+
 
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
         """Records labels for all frames passed during advance"""
