@@ -827,16 +827,14 @@ class VRSDataExtractor():
     
     def annotate(self, frames_dict, actions_csv_path, blur_csv_path, fps=15):
         action_label_map = {
-            '0': 'checking left wing mirror',
             '1': 'checking right wing mirror',
             '2': 'checking rear view mirror',
-            '3': 'left turn',
-            '4': 'right turn',
-            '5': 'left lane change',
-            '6': 'right lane change',
-            '7': 'mobile phone usage',
-            '8': 'driving',
-            '9': 'idle'
+            '3': 'turn',
+            '4': 'lane change',
+            '5': 'mobile phone usage',
+            '6': 'driving',
+            '7': 'idle',
+            '8': 'checking left wing mirror',
         }
 
         blur_label_map = {
