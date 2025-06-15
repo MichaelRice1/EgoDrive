@@ -1,4 +1,5 @@
 
+
 import os
 import numpy as np
 from PIL import Image
@@ -143,14 +144,14 @@ class VRSDataExtractor():
 
 
         rgblabel = 'camera-rgb'
-        etlabel = 'camera-eyetracking'
+        etlabel = 'camera-et'
         left_slam_label  = 'camera-slam-left'
         right_slam_label = 'camera-slam-right'
 
         num_frames_rgb = self.provider.get_num_data(self.provider.get_stream_id_from_label(rgblabel))
-        # num_frames_eth = self.provider.get_num_data(self.provider.get_stream_id_from_label(etlabel))
-        # num_frames_slam_left = self.provider.get_num_data(self.provider.get_stream_id_from_label(left_slam_label))
-        # num_frames_slam_right = self.provider.get_num_data(self.provider.get_stream_id_from_label(right_slam_label))
+        num_frames_eth = self.provider.get_num_data(self.provider.get_stream_id_from_label(etlabel))
+        num_frames_slam_left = self.provider.get_num_data(self.provider.get_stream_id_from_label(left_slam_label))
+        num_frames_slam_right = self.provider.get_num_data(self.provider.get_stream_id_from_label(right_slam_label))
 
         rgb_ts = self.provider.get_timestamps_ns(self.stream_mappings['camera-rgb'], self.time_domain)
         et_ts = self.provider.get_timestamps_ns(self.stream_mappings['camera-eyetracking'], self.time_domain)
@@ -161,6 +162,18 @@ class VRSDataExtractor():
 
         if end_index is None:
             end_index = num_frames_rgb
+            end_index_et = num_frames_eth
+            end_index_slam = num_frames_slam_left
+        else:
+            end_index_et = end_index * 2
+
+
+        if start_index != 0:
+            start_index_et = start_index * 2
+        else:
+            start_index_et = 0
+
+
 
 
         for i,index in enumerate(tqdm.tqdm(range(start_index, end_index), desc= "Extracting Images")):
@@ -169,7 +182,7 @@ class VRSDataExtractor():
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)[0].to_numpy_array()
             image_pil = Image.fromarray(image_data)  
             image_pil = image_pil.rotate(-90) 
-            #image_pil = image_pil.resize((512, 512)) 
+            image_pil = image_pil.resize((512, 512)) 
 
             # Save to buffer (optional, only if needed)
             # image_pil.save(buffer, format="PNG")
@@ -199,23 +212,19 @@ class VRSDataExtractor():
         print(f"Extracted {len(self.result['rgb'])} images from {rgblabel} stream")
 
         if not rgb_flag:
-            for index in range(start_index, end_index):
+            for index in range(start_index_et, end_index_et):
                 image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)[0].to_numpy_array()
                 et_images[et_ts[index]] = img
-                # break
                 
             self.result['et'] = et_images
             print(f"Extracted {len(self.result['et'])} images from {etlabel} stream")
 
             try:
-                for index in range(start_index, end_index):
+                for index in range(start_index, end_index_slam):
                     left_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-left'], index)
                     right_image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-slam-right'], index)
                     left_img = np.array(Image.fromarray(left_image_data[0].to_numpy_array()))
                     right_img = np.array(Image.fromarray(right_image_data[0].to_numpy_array()))
-                    # print(f'slam storage size {sys.getsizeof(left_img.nbytes)}')
-                    # slam_img = Image.fromarray(left_img)
-                    # slam_img.save('sampledata/imagetesting/slam_left.png', format='PNG', compress_level=0)
                     slam_left_images[slam_left_ts[index]] = left_img
                     slam_right_images[slam_right_ts[index]] = right_img
                     # break
@@ -297,7 +306,10 @@ class VRSDataExtractor():
                         rgb_camera_calibration,
                         depth_m=gaze_point.depth
                     )
-                gaze_projection
+                
+                gaze_projection = gaze_projection * (512/1408)
+                gaze_projection = [512 - gaze_projection[1], gaze_projection[0]] 
+                
                 gaze_points[ts] = {
                     "projection": gaze_projection,
                     'depth': gaze_point.depth,
@@ -323,6 +335,10 @@ class VRSDataExtractor():
                             rgb_camera_calibration,
                             depth_m=personalized_gaze_point.depth
                         )
+
+                    if gaze_projection is not None:
+                        gaze_projection = gaze_projection * (512/1408)
+                        gaze_projection = [512 - gaze_projection[1], gaze_projection[0]] 
                     
                     p_gaze_points[ts] = {
                         "projection": gaze_projection,
@@ -331,11 +347,7 @@ class VRSDataExtractor():
 
         self.result['personalized_gaze'] = p_gaze_points
 
-        # if personalized_gaze_path:
-        #     gaze = list(p_gaze_points.values())
-        # else:
-        #     gaze = list(gaze_points.values())
-
+        gaze_points = [g['projection'] for g in gaze_points.values()]
         p_gaze_points = [g['projection'] for g in p_gaze_points.values()]
         # p_gaze_points = [point for point in p_gaze_points if point is not None]
         
@@ -356,7 +368,11 @@ class VRSDataExtractor():
         # gaze = [g[0]['projection']*(512/1408) for g in gaze]
 
         kf = self.create_kalman_filter()
-        kf.x[:2] = np.array([[p_gaze_points[0][0]], [p_gaze_points[0][1]]])  # Initialize with first point
+
+        if len(p_gaze_points) == 0:
+            kf.x = np.array([[gaze_points[0][0]], [gaze_points[0][1]], [0], [0]])  # Initialize with first point
+        else:
+            kf.x = np.array([[p_gaze_points[0][0]], [p_gaze_points[0][1]], [0], [0]])
 
         for i, z in enumerate(p_gaze_points):
             if z is None:
@@ -714,6 +730,7 @@ class VRSDataExtractor():
             gps_data[gps_ts[index]] = p
         
         self.result['gps'] = gps_data
+        print(f"Extracted {len(self.result['gps'])} data points from gps stream")
 
     def ego_blur(self, input_labels:str, frames):
 
@@ -850,7 +867,7 @@ class VRSDataExtractor():
         FRAME_INTERVAL = 1.0 / fps
 
         sorted_ts = sorted(frames_dict.keys())
-        gaze_points = list(self.result['personalized_gaze'].values())
+        gaze_points = list(self.result['personalized_gaze'].values())[::2]
 
         if not sorted_ts:
             print("No frames to label!")
@@ -889,8 +906,13 @@ class VRSDataExtractor():
                 ts = sorted_ts[current_idx]
                 frame = frames_dict[ts].copy()
 
-                projection = gaze_points[current_idx]['projection']
-                depth = gaze_points[current_idx]['depth']
+                if current_idx >= len(gaze_points):
+                    print("No more gaze points available.")
+                    projection = None
+                    depth = None
+                else:
+                    projection = gaze_points[current_idx]['projection']
+                    depth = gaze_points[current_idx]['depth']
 
                 # Show current labels (inherited)
                 active_actions = frame_labels[current_idx]
@@ -999,6 +1021,7 @@ class VRSDataExtractor():
         '''
 
         np.save(output_path, self.result)
+        print(f"Data saved to {output_path}")
 
     def get_object_dets(self, progress_callback=None):
         '''

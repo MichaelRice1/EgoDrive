@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from vrs_extractor import VRSDataExtractor
 
 
@@ -36,18 +37,16 @@ class DatasetAnnotator:
 
         hand_path = os.path.join(full_path, f'mps_{name}_vrs', 'hand_tracking', 'hand_tracking_results.csv')
         vde.get_hand_data(hand_path)
-        print(f'Shape of frames data: {np.shape(list(vde.result["rgb"].values()))}')
         vde.annotate(vde.result['rgb'], actions_csv_path, blur_csv_path)
-        vde.save_data(os.path.join(full_path, f"{folder}.npy"))
 
-    def process_all_folders(self):
-        folders = os.listdir(self.base_path)
-        for folder in sorted(folders):
-            self.process_folder(folder)
-            break  # Remove this break if you want to process all folders
+    # def process_all_folders(self):
+    #     folders = os.listdir(self.base_path)
+    #     folders = [folder for folder in folders if 'Drive' in folder]
+    #     for folder in sorted(folders):
+    #         self.process_folder(folder)
 
 
 if __name__ == "__main__":
     base_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/drives'
     annotator = DatasetAnnotator(base_path)
-    annotator.process_all_folders()
+    annotator.process_folder('Drive3')
