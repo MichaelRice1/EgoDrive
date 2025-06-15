@@ -828,13 +828,14 @@ class VRSDataExtractor():
     def annotate(self, frames_dict, actions_csv_path, blur_csv_path, fps=15):
         action_label_map = {
             '1': 'checking right wing mirror',
-            '2': 'checking rear view mirror',
-            '3': 'turn',
-            '4': 'lane change',
-            '5': 'mobile phone usage',
-            '6': 'driving',
-            '7': 'idle',
-            '8': 'checking left wing mirror',
+            '2': 'checking left wing mirror',
+            '3': 'checking rear view mirror',
+            '4': 'left turn',
+            '5': 'right turn',
+            '6': 'lane change',
+            '7': 'mobile phone usage',
+            '8': 'driving',
+            '9': 'idle'
         }
 
         blur_label_map = {
@@ -888,7 +889,7 @@ class VRSDataExtractor():
                 ts = sorted_ts[current_idx]
                 frame = frames_dict[ts].copy()
 
-                projection = gaze_points[current_idx]['projection'] * (512 / 1408)
+                projection = gaze_points[current_idx]['projection']
                 depth = gaze_points[current_idx]['depth']
 
                 # Show current labels (inherited)

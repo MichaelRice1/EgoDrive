@@ -1,8 +1,8 @@
 import os
 import sys
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from notebooks_and_scripts.vrs_extractor import VRSDataExtractor
+import numpy as np
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from vrs_extractor import VRSDataExtractor
 
 
 class DatasetAnnotator:
@@ -10,9 +10,9 @@ class DatasetAnnotator:
         self.base_path = base_path
 
     def process_folder(self, folder):
-        actions_csv_path = os.path.join('train', folder, 'actions.csv')
-        blur_csv_path = os.path.join('train', folder, 'blur.csv')
-        vrs_path = os.path.join('train', folder, f"{folder}.vrs")
+        actions_csv_path = os.path.join(base_path, folder, 'actions.csv')
+        blur_csv_path = os.path.join(base_path, folder, 'blur.csv')
+        vrs_path = os.path.join(base_path, folder, f"{folder}.vrs")
 
         if os.path.exists(actions_csv_path):
             print(f"Annotations file found for {folder}. Skipping...")
@@ -36,7 +36,7 @@ class DatasetAnnotator:
 
         hand_path = os.path.join(full_path, f'mps_{name}_vrs', 'hand_tracking', 'hand_tracking_results.csv')
         vde.get_hand_data(hand_path)
-
+        print(f'Shape of frames data: {np.shape(list(vde.result["rgb"].values()))}')
         vde.annotate(vde.result['rgb'], actions_csv_path, blur_csv_path)
         vde.save_data(os.path.join(full_path, f"{folder}.npy"))
 
@@ -48,6 +48,6 @@ class DatasetAnnotator:
 
 
 if __name__ == "__main__":
-    base_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/train'
+    base_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/drives'
     annotator = DatasetAnnotator(base_path)
     annotator.process_all_folders()
