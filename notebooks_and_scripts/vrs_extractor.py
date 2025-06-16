@@ -1066,51 +1066,6 @@ class VRSDataExtractor():
 
         self.result['object_detections'] = results
 
-    def person_detection(self, image):
-        '''
-        Detect persons in the image using the mediapipe pose detection model
-        '''
-
-        model = YOLO("/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/models/yolo11n.pt")
-        person_confidences = []
-
-        # Run inference
-        results = model(image)[0]  # Get the first result
-
-        person_indices = [results.boxes.cls == 0][0]
-        
-        
-        for i,item in enumerate(person_indices):
-            
-            if item == True:
-                person_confidences.append(results.boxes.conf[i].item())
-            else:
-                person_confidences.append(0.0)
-
-        
-        for i in range(len(person_confidences)):
-            if person_confidences[i] < 0.4:
-                person_indices[i] = False
-
-        people_bboxes = results.boxes.xyxy[person_indices]
-
-        cropped_images = []
-
-        for bbox in people_bboxes:
-            x1, y1, x2, y2 = map(int, bbox[:4])
-            cropped_image = image[y1:y2, x1:x2]
-            cropped_images.append(cropped_image)
-
-        return cropped_images
-
-    def generate_gaussian_mask(self, shape, center, sigma=20):
-        x = np.arange(0, shape[1])
-        y = np.arange(0, shape[0])
-        x, y = np.meshgrid(x, y)
-        d = np.sqrt((x - center[0])**2 + (y - center[1])**2)
-        g = np.exp(-(d**2 / (2.0 * sigma**2)))
-        return g
-
     def overlay_gaze_heatmap(self, frame, center, angle_error, threshold=0.05):
         h, w = frame.shape[:2]
         fov = 110
