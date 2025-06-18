@@ -182,7 +182,7 @@ class VRSDataExtractor():
             image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-rgb'], index)[0].to_numpy_array()
             image_pil = Image.fromarray(image_data)  
             image_pil = image_pil.rotate(-90) 
-            image_pil = image_pil.resize((512, 512)) 
+            image_pil = image_pil.resize((512, 512), Image.LANCZOS)  # Resize to 512x512
 
             # Save to buffer (optional, only if needed)
             # image_pil.save(buffer, format="PNG")
@@ -927,9 +927,9 @@ class VRSDataExtractor():
                     status.extend([f"blur:{b}" for b in active_blurs])
 
                 cv2.putText(frame, f"ACTIVE: {', '.join(status) or 'None'}",
-                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                 cv2.putText(frame, f"Frame {current_idx + 1}/{len(sorted_ts)} (X: exit, SPACE: play/pause)",
-                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
                 if projection is not None:
                     frame = cv2.circle(frame, (int(projection[0]), int(projection[1])), 6, (255, 0, 0), 3)

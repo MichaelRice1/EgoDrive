@@ -90,7 +90,7 @@ class DataProcessor:
 if __name__ == "__main__":
     dp = DataProcessor()
 
-    drive_no = 7
+    drive_no = 1
     dp.vrs_processing(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/drives/Drive{drive_no}/Drive{drive_no}.vrs')
 
 

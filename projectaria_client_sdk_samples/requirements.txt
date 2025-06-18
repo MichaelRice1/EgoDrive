@@ -1,0 +1,6 @@
+projectaria_client_sdk
+
+opencv-python
+fastplotlib==0.1.0a13
+glfw==2.6.2
+pygfx==0.1.14

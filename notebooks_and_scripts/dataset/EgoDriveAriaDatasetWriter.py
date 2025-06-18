@@ -4,16 +4,16 @@ from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
 import torch.nn.functional as F
+import cv2
 
 @dataclass
 class ActionSequence:
     """Single training sequence with multi-modal data and labels"""
     rgb: List[str]  # Frame paths or identifiers
     gaze: List[np.ndarray]  # Gaze coordinates [x, y]
-    imu_right: List[Dict[str, np.ndarray]]  # IMU readings
-    imu_left: List[Dict[str, np.ndarray]]  # IMU readings for left hand
+    imu_right: List[np.ndarray]  # IMU readings
+    imu_left: List[np.ndarray]  # IMU readings for left hand
     hand_landmarks: List[np.ndarray]  # Hand keypoints
     labels: List[str]  # Multiple action labels for this sequence
     start_frame: int
@@ -21,36 +21,35 @@ class ActionSequence:
     duration: float
     sequence_id: str
 
-class MultiModalActionDataset:
+class FixedLengthActionDataset:
     """
-    Research-grade dataset for multi-modal action recognition.
+    Fixed-length dataset for multi-modal action recognition.
     
-    Best singular strategy: Variable-length sequences with multi-label classification
-    using natural annotation boundaries and temporal context.
+    Extracts fixed-size windows based on action boundaries for simpler training.
+    Optimized for circular Project Aria glasses images.
     """
     
-    def __init__(self, aligned_data_path: str = None,annotations_file: str = None, action_taxonomy: Dict[str, List[str]] = None):
+    def __init__(self, aligned_data_path: str = None, annotations_file: str = None, 
+                 window_size: int = 64, image_size: int = 224, 
+                 action_taxonomy: Dict[str, List[str]] = None):
         """
         Args:
-            aligned_data_path: Path to saved aligned dataset (from aligner.export_for_training())
-            aligner: Alternative - pass trained ActionRecognitionAligner directly
+            aligned_data_path: Path to saved aligned dataset
             annotations_file: CSV with columns [start_frame, end_frame, action]
+            window_size: Fixed window size for all sequences
+            image_size: Target size for preprocessed circular images (224, 320, or 448)
             action_taxonomy: Optional hierarchical action grouping
         """
+        self.window_size = window_size
+        self.image_size = image_size
+        
         if aligned_data_path is not None:
             # Load from saved aligned data
-            import pickle
-            with open(aligned_data_path, 'rb') as f:
-                self.aligned_data = np.load(f, allow_pickle=True).item()
-            self.aligner = None  # No aligner object, just the data
+            self.aligned_data = np.load(aligned_data_path, allow_pickle=True).item()
+            self.aligner = None
             print(f"Loaded aligned data from {aligned_data_path}")
-        elif aligner is not None:
-            # Use aligner object directly
-            self.aligner = aligner
-            self.aligned_data = aligner.aligned_data
-            print("Using provided aligner object")
         else:
-            raise ValueError("Must provide either aligned_data_path or aligner")
+            raise ValueError("Must provide aligned_data_path")
             
         if annotations_file:
             self.annotations = pd.read_csv(annotations_file)
@@ -65,17 +64,23 @@ class MultiModalActionDataset:
         # Action taxonomy for hierarchical labels (optional)
         self.action_taxonomy = action_taxonomy or {}
         
-        # Generate training sequences
-        self.sequences = self._build_sequences()
+        # Generate fixed-length training sequences
+        self.sequences = self._build_fixed_sequences()
         
         print(f"Dataset created: {len(self.sequences)} sequences, {self.num_classes} action classes")
+        print(f"Fixed window size: {self.window_size} frames")
+        print(f"Image preprocessing: {self.image_size}x{self.image_size} (optimized for circular Aria frames)")
         self._print_dataset_stats()
     
-    def _build_sequences(self) -> List[ActionSequence]:
-        """Build training sequences from annotations with overlapping action handling"""
+    def __len__(self):
+        """Number of training sequences"""
+        return len(self.sequences)
+    
+    def _build_fixed_sequences(self) -> List[ActionSequence]:
+        """Build fixed-length training sequences from annotations"""
         sequences = []
         
-        # Group overlapping annotations
+        # Group overlapping annotations first
         annotation_groups = self._group_overlapping_annotations()
         
         for group_id, (start_frame, end_frame, actions) in enumerate(annotation_groups):
@@ -83,10 +88,17 @@ class MultiModalActionDataset:
             if end_frame >= self.aligned_data['frame_count']:
                 continue
             
-            # Extract multi-modal data for this sequence
-            window_data = self._get_window_from_saved_data(start_frame, end_frame)
+            # Extract fixed window based on action type and length
+            window_start, window_end = self._get_action_window(start_frame, end_frame, actions)
             
-            # Check data quality - require minimum valid data
+            # Validate window
+            if window_end >= self.aligned_data['frame_count'] or window_start < 0:
+                continue
+            
+            # Extract multi-modal data for this fixed window
+            window_data = self._get_window_from_saved_data(window_start, window_end)
+            
+            # Check data quality
             if not self._is_sequence_valid(window_data):
                 continue
             
@@ -94,12 +106,12 @@ class MultiModalActionDataset:
             sequence = ActionSequence(
                 rgb=window_data.get('rgb', []),
                 gaze=self.get_gaze(window_data.get('gaze', [])),
-                imu_right =self.get_imu(window_data.get('imu_right', [])),
-                imu_left = self.get_imu(window_data.get('imu_left', [])),
+                imu_right=self.get_imu(window_data.get('imu_right', [])),
+                imu_left=self.get_imu(window_data.get('imu_left', [])),
                 hand_landmarks=self.get_hand_landmarks(window_data.get('hand_landmarks', [])),
                 labels=actions,
-                start_frame=start_frame,
-                end_frame=end_frame,
+                start_frame=window_start,
+                end_frame=window_end,
                 duration=window_data['window_duration'],
                 sequence_id=f"seq_{group_id:04d}"
             )
@@ -108,8 +120,89 @@ class MultiModalActionDataset:
         
         return sequences
     
+    def _get_action_window(self, start_frame: int, end_frame: int, actions: List[str]) -> Tuple[int, int]:
+        """Get optimal fixed window based on action type and boundary"""
+        action_length = end_frame - start_frame
+        
+        # Determine extraction strategy based on action type
+        primary_action = actions[0]  # Use first action for strategy
+        
+        if primary_action in ['checking left wing mirror', 'checking right wing mirror', 'checking rear view mirror']:
+            # Mirror checks: center on action
+            return self._center_window(start_frame, end_frame)
+            
+        elif primary_action in ['left turn', 'right turn']:
+            # Turns: include lead-up and execution
+            return self._action_with_context(start_frame, end_frame)
+            
+        elif primary_action == 'mobile phone usage':
+            # Phone usage: sample from middle portion
+            return self._sample_from_middle(start_frame, end_frame)
+            
+        elif primary_action == 'driving':
+            # Normal driving: random sample from action
+            return self._random_sample(start_frame, end_frame)
+            
+        else:
+            # Default: center on action
+            return self._center_window(start_frame, end_frame)
+    
+    def _center_window(self, start_frame: int, end_frame: int) -> Tuple[int, int]:
+        """Center fixed window on action"""
+        action_center = (start_frame + end_frame) // 2
+        window_start = max(0, action_center - self.window_size // 2)
+        window_end = window_start + self.window_size
+        
+        # Ensure we don't exceed data bounds
+        if window_end >= self.aligned_data['frame_count']:
+            window_end = self.aligned_data['frame_count'] - 1
+            window_start = max(0, window_end - self.window_size)
+            
+        return window_start, window_end
+    
+    def _action_with_context(self, start_frame: int, end_frame: int) -> Tuple[int, int]:
+        """Include context before action (for turns)"""
+        context_frames = self.window_size // 4  # 25% context before action
+        window_start = max(0, start_frame - context_frames)
+        window_end = window_start + self.window_size
+        
+        if window_end >= self.aligned_data['frame_count']:
+            window_end = self.aligned_data['frame_count'] - 1
+            window_start = max(0, window_end - self.window_size)
+            
+        return window_start, window_end
+    
+    def _sample_from_middle(self, start_frame: int, end_frame: int) -> Tuple[int, int]:
+        """Sample from middle portion of long action"""
+        action_length = end_frame - start_frame
+        if action_length <= self.window_size:
+            return self._center_window(start_frame, end_frame)
+        
+        # Sample from middle third
+        middle_start = start_frame + action_length // 3
+        middle_end = end_frame - action_length // 3
+        
+        sample_center = (middle_start + middle_end) // 2
+        window_start = max(0, sample_center - self.window_size // 2)
+        window_end = window_start + self.window_size
+        
+        return window_start, window_end
+    
+    def _random_sample(self, start_frame: int, end_frame: int) -> Tuple[int, int]:
+        """Random sample from action (for driving)"""
+        action_length = end_frame - start_frame
+        if action_length <= self.window_size:
+            return self._center_window(start_frame, end_frame)
+        
+        # Random start within action
+        max_start = end_frame - self.window_size
+        window_start = np.random.randint(start_frame, max_start + 1)
+        window_end = window_start + self.window_size
+        
+        return window_start, window_end
+    
     def _group_overlapping_annotations(self):
-        """Group overlapping annotations into unified sequences and split long segments"""
+        """Group overlapping annotations into unified sequences"""
         # Sort annotations by start frame
         sorted_annotations = self.annotations.sort_values('start_frame')
         
@@ -133,34 +226,19 @@ class MultiModalActionDataset:
                     current_actions.append(action)
             else:
                 # No overlap - save current group and start new one
-                if current_start is not None:
-                    groups.extend(self._split_long_segment(current_start, current_end, current_actions))
+                groups.append((current_start, current_end, current_actions.copy()))
                 current_start = start
                 current_end = end
                 current_actions = [action]
         
         # Add final group
         if current_start is not None:
-            groups.extend(self._split_long_segment(current_start, current_end, current_actions))
+            groups.append((current_start, current_end, current_actions))
         
         return groups
-
-    def _split_long_segment(self, start_frame, end_frame, actions):
-        """Split a segment into smaller chunks if it exceeds 50 frames"""
-        segments = []
-        while end_frame - start_frame > 50:
-            segments.append((start_frame, start_frame + 25, actions.copy()))
-            start_frame += 25
-        segments.append((start_frame, end_frame, actions.copy()))
-        return segments
     
     def _get_window_from_saved_data(self, start_frame: int, end_frame: int):
-        """Extract window from saved aligned data (when no aligner object available)"""
-        if self.aligner is not None:
-            # Use aligner method if available
-            return self.aligner.get_window(start_frame, end_frame)
-        
-        # Extract from saved data directly
+        """Extract window from saved aligned data"""
         window_data = {}
         
         for mod_name, mod_data in self.aligned_data['modalities'].items():
@@ -176,41 +254,33 @@ class MultiModalActionDataset:
         
         return window_data
     
-    def get_gaze(self, gaze_data) :
-        """Extract gaze coordinates from aligned data,
-        given in {'projection': [np.float64(X), np.float64(Y)], 'depth': D} 
-        """
+    def get_gaze(self, gaze_data):
+        """Extract gaze coordinates from aligned data"""
         gaze_coords = []
-
         for frame in gaze_data:
             if frame is None:
-                # Handle missing frame data
                 gaze_coords.append(np.array([0.0, 0.0], dtype=np.float32))
                 continue
             if 'projection' in frame:
                 if frame['projection'] is None:
-                    # Handle missing projection data
                     gaze_coords.append(np.array([0.0, 0.0], dtype=np.float32))
                     continue
                 x, y = frame['projection']
                 gaze_coords.append(np.array([x, y], dtype=np.float32))
             else:
-                # Handle missing or malformed gaze data
                 gaze_coords.append(np.array([0.0, 0.0], dtype=np.float32))
         return gaze_coords
 
-    def get_imu(self, imu_data) :
-        """Extract IMU readings from aligned data,
-        given in list [acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z, 0.0, 0.0, 0.0]
-        return np array of shape (n,6) for each frame
-        """
+    def get_imu(self, imu_data):
+        """Extract IMU readings from aligned data"""
         imu_readings = []
-
         for frame in imu_data:
-            imu_readings.append(np.array(frame[0:6], dtype=np.float32))  # Extract first 6 values (accel + gyro)
-
+            if frame is None or len(frame) < 6:
+                imu_readings.append(np.zeros(6, dtype=np.float32))
+            else:
+                imu_readings.append(np.array(frame[0:6], dtype=np.float32))
         return imu_readings
-
+    
     def get_hand_landmarks(self, hand_data: List[np.ndarray]) -> List[np.ndarray]:
         """Extract hand landmarks from aligned data,
         given in list of form {'left_wrist': array([x,y]), 'left_palm': array([x,y]), 
@@ -249,15 +319,102 @@ class MultiModalActionDataset:
                 hand_landmarks.append(np.zeros(8, dtype=np.float32))  # 8 zeros for 4 points (x, y)
 
         return hand_landmarks
+
+    def preprocess_aria_frame(self, image_path):
+        """Preprocess circular Project Aria glasses frame"""
+        import cv2
+        
+        try:
+            # Load original image
+            img = cv2.imread(image_path)
+            if img is None:
+                return torch.zeros(3, self.image_size, self.image_size)
+            
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            h, w = img.shape[:2]
+            
+            # Find circular content
+            center = (w // 2, h // 2)
+            radius = self._find_circular_radius(img, center)
+            
+            # Crop to square around circle with padding
+            crop_size = int(radius * 2.1)  # 10% padding
+            x1 = max(0, center[0] - crop_size // 2)
+            y1 = max(0, center[1] - crop_size // 2)
+            x2 = min(w, x1 + crop_size)
+            y2 = min(h, y1 + crop_size)
+            
+            # Ensure square crop
+            crop_h = y2 - y1
+            crop_w = x2 - x1
+            if crop_h != crop_w:
+                size = min(crop_h, crop_w)
+                y2 = y1 + size
+                x2 = x1 + size
+            
+            cropped = img[y1:y2, x1:x2]
+            
+            # Resize to target size
+            resized = cv2.resize(cropped, (self.image_size, self.image_size))
+            
+            # Convert to tensor and normalize
+            tensor = torch.from_numpy(resized).permute(2, 0, 1).float() / 255.0
+            
+            # Optional: Apply circular mask to remove corner artifacts
+            if hasattr(self, 'apply_circular_mask') and self.apply_circular_mask:
+                tensor = self._apply_circular_mask(tensor)
+            
+            return tensor
+            
+        except Exception as e:
+            print(f"Error processing frame {image_path}: {e}")
+            return torch.zeros(3, self.image_size, self.image_size)
+    
+    def _find_circular_radius(self, img, center):
+        """Find radius of circular content in Aria frame"""
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        
+        # Find non-black pixels (content)
+        mask = gray > 10  # Threshold for non-black content
+        
+        if not np.any(mask):
+            # Fallback if no content found
+            return min(img.shape[:2]) // 4
+        
+        # Find maximum distance from center to content
+        y_coords, x_coords = np.where(mask)
+        distances = np.sqrt((x_coords - center[0])**2 + (y_coords - center[1])**2)
+        
+        # Use 95th percentile for robustness against noise
+        return int(np.percentile(distances, 95))
+    
+    def _apply_circular_mask(self, tensor):
+        """Apply circular mask to remove corner artifacts"""
+        c, h, w = tensor.shape
+        center = (h // 2, w // 2)
+        radius = min(h, w) // 2
+        
+        # Create circular mask
+        y, x = torch.meshgrid(torch.arange(h), torch.arange(w), indexing='ij')
+        distance = torch.sqrt((x - center[0])**2 + (y - center[1])**2)
+        mask = (distance <= radius).float()
+        
+        # Apply mask to all channels
+        for c_idx in range(c):
+            tensor[c_idx] *= mask
+        
+        return tensor
+        
     
     def _is_sequence_valid(self, window_data: Dict, min_valid_ratio: float = 0.7) -> bool:
         """Check if sequence has sufficient valid data"""
         total_frames = len(window_data.get('rgb', []))
-        if total_frames < 15:  # Minimum sequence length
+        if total_frames < self.window_size // 2:  # At least half the window size
             return False
         
         # Check each modality for sufficient coverage
-        for modality in ['gaze', 'imu']:
+        for modality in ['gaze', 'imu_right']:
             if modality in window_data:
                 valid_count = sum(1 for x in window_data[modality] if x is not None)
                 if valid_count / total_frames < min_valid_ratio:
@@ -277,18 +434,15 @@ class MultiModalActionDataset:
                 multi_hot[self.action_to_idx[label]] = 1.0
         return multi_hot
     
-    def create_pytorch_dataset(self, context_frames: int = 1) -> 'PyTorchActionDataset':
+    def create_pytorch_dataset(self) -> 'PyTorchFixedLengthDataset':
         """Create PyTorch-compatible dataset"""
-        return PyTorchActionDataset(self, context_frames=context_frames)
+        return PyTorchFixedLengthDataset(self)
     
     def _print_dataset_stats(self):
         """Print dataset statistics"""
         print(f"\nDataset Statistics:")
         print(f"  Total sequences: {len(self.sequences)}")
-        
-        # Length distribution
-        lengths = [seq.end_frame - seq.start_frame for seq in self.sequences]
-        print(f"  Sequence lengths: min={min(lengths)}, max={max(lengths)}, mean={np.mean(lengths):.1f}")
+        print(f"  All sequences have fixed length: {self.window_size} frames")
         
         # Action distribution
         action_counts = {}
@@ -304,12 +458,12 @@ class MultiModalActionDataset:
         multi_label_seqs = sum(1 for seq in self.sequences if len(seq.labels) > 1)
         print(f"  Multi-label sequences: {multi_label_seqs}/{len(self.sequences)} ({multi_label_seqs/len(self.sequences):.1%})")
 
-class PyTorchActionDataset(Dataset):
-    """PyTorch Dataset wrapper for training"""
+class PyTorchFixedLengthDataset(Dataset):
+    """PyTorch Dataset wrapper for fixed-length training"""
     
-    def __init__(self, action_dataset: MultiModalActionDataset, context_frames: int = 30):
+    def __init__(self, action_dataset: FixedLengthActionDataset):
         self.dataset = action_dataset
-        self.context_frames = context_frames
+        self.window_size = action_dataset.window_size
     
     def __len__(self):
         return len(self.dataset.sequences)
@@ -317,122 +471,124 @@ class PyTorchActionDataset(Dataset):
     def __getitem__(self, idx):
         sequence = self.dataset.sequences[idx]
         
-        # Convert to tensors
+        # Convert to tensors - all sequences are exactly window_size length
         gaze_tensor = torch.stack([torch.from_numpy(g) for g in sequence.gaze])
-
         imu_right_tensor = torch.stack([torch.from_numpy(imu) for imu in sequence.imu_right])
-        imu_left_tensor = torch.stack([torch.from_numpy(imu) for imu in sequence.imu_left]) if sequence.imu_left else None
-        
-        # Hand landmarks
+        imu_left_tensor = torch.stack([torch.from_numpy(imu) for imu in sequence.imu_left]) if sequence.imu_left else torch.zeros_like(imu_right_tensor)
         hand_tensor = torch.stack([torch.from_numpy(h) for h in sequence.hand_landmarks])
+        
+        # RGB frames - already preprocessed as tensors
+        rgb_tensor = torch.stack(sequence.rgb) if sequence.rgb else torch.zeros(self.window_size, 3, self.dataset.image_size, self.dataset.image_size)
+        
+        # Pad sequences if they're shorter than window_size (rare case)
+        target_length = self.window_size
+        
+        if len(gaze_tensor) < target_length:
+            pad_length = target_length - len(gaze_tensor)
+            gaze_tensor = F.pad(gaze_tensor, (0, 0, 0, pad_length))
+            imu_right_tensor = F.pad(imu_right_tensor, (0, 0, 0, pad_length))
+            imu_left_tensor = F.pad(imu_left_tensor, (0, 0, 0, pad_length))
+            hand_tensor = F.pad(hand_tensor, (0, 0, 0, pad_length))
+            rgb_tensor = F.pad(rgb_tensor, (0, 0, 0, 0, 0, 0, 0, pad_length))
+        
+        # Ensure exact length
+        gaze_tensor = gaze_tensor[:target_length]
+        imu_right_tensor = imu_right_tensor[:target_length]
+        imu_left_tensor = imu_left_tensor[:target_length]
+        hand_tensor = hand_tensor[:target_length]
+        rgb_tensor = rgb_tensor[:target_length]
         
         # Multi-label target
         target = torch.from_numpy(self.dataset.get_multi_label_vector(sequence.labels))
         
         return {
-            'gaze': gaze_tensor,
-            'imu_right': imu_right_tensor,  # Use right hand IMU data
-            'imu_left': imu_left_tensor,  # Optional: include left hand IMU if needed
-            'hand_landmarks': hand_tensor,
-            'target': target,
-            'length': len(sequence.gaze),
+            'gaze': gaze_tensor,           # [window_size, 2]
+            'imu_right': imu_right_tensor, # [window_size, 6]
+            'imu_left': imu_left_tensor,   # [window_size, 6]
+            'hand_landmarks': hand_tensor,  # [window_size, 8]
+            'rgb': rgb_tensor,             # [window_size, 3, image_size, image_size]
+            'target': target,              # [num_classes]
             'sequence_id': sequence.sequence_id,
             'actions': sequence.labels
         }
 
-def collate_variable_length(batch):
-    """Custom collate function for variable-length sequences"""
-    # Separate each modality
-    gaze_batch = [item['gaze'] for item in batch]
-    imu_right_batch = [item['imu_right'] for item in batch]
-    imu_left_batch = [item['imu_left'] for item in batch]
-    hands_batch = [item['hand_landmarks'] for item in batch]
-    targets = torch.stack([item['target'] for item in batch])
-    lengths = torch.tensor([item['length'] for item in batch])
+def simple_collate_fn(batch):
+    """Simple collate function for fixed-length sequences - no padding needed!"""
     
-    # Pad sequences to max length in batch
-    gaze_padded = pad_sequence(gaze_batch, batch_first=True, padding_value=0)
-    imu_right_padded = pad_sequence(imu_right_batch, batch_first=True, padding_value=0)
-    imu_left_padded = pad_sequence(imu_left_batch, batch_first=True, padding_value=0)
-    hands_padded = pad_sequence(hands_batch, batch_first=True, padding_value=0)
+    # Stack all tensors directly since they're all the same size
+    gaze_batch = torch.stack([item['gaze'] for item in batch])
+    imu_right_batch = torch.stack([item['imu_right'] for item in batch])
+    imu_left_batch = torch.stack([item['imu_left'] for item in batch])
+    hands_batch = torch.stack([item['hand_landmarks'] for item in batch])
+    rgb_batch = torch.stack([item['rgb'] for item in batch])
+    targets = torch.stack([item['target'] for item in batch])
     
     return {
-        'gaze': gaze_padded,
-        'imu_right': imu_right_padded,
-        'imu_left': imu_left_padded, 
-        'hands': hands_padded,
-        'target': targets,
-        'lengths': lengths,
+        'gaze': gaze_batch,        # [batch_size, window_size, 2]
+        'imu_right': imu_right_batch,  # [batch_size, window_size, 6]
+        'imu_left': imu_left_batch,    # [batch_size, window_size, 6]
+        'hands': hands_batch,      # [batch_size, window_size, 8]
+        'rgb': rgb_batch,          # [batch_size, window_size, 3, image_size, image_size]
+        'target': targets,         # [batch_size, num_classes]
         'sequence_ids': [item['sequence_id'] for item in batch],
         'actions': [item['actions'] for item in batch]
     }
 
-# Example usage
-def create_training_dataset(aligned_data_path: str = None,  annotations_csv: str = None):
-    """Complete pipeline to create training-ready dataset"""
+def create_fixed_length_training_dataset(aligned_data_path: str, annotations_csv: str, 
+                                        window_size: int = 64, image_size: int = 224, 
+                                        batch_size: int = 16):
+    """Complete pipeline to create fixed-length training dataset"""
     
-    # Create dataset from saved data or aligner
-    dataset = MultiModalActionDataset(
+    # Create fixed-length dataset
+    dataset = FixedLengthActionDataset(
         aligned_data_path=aligned_data_path,
-        annotations_file=annotations_csv
+        annotations_file=annotations_csv,
+        window_size=window_size,
+        image_size=image_size
     )
-
     
     # Convert to PyTorch
     pytorch_dataset = dataset.create_pytorch_dataset()
-    np.save('/Volumes/MichaelSSD/dataset/Compiled Data (.npy)/Drive1_dataset.npy', pytorch_dataset, allow_pickle=True)
-
+    print(f"Converted to PyTorch dataset with {len(pytorch_dataset)} sequences")
     
-    # Create data loader with custom collate function
+    # Create simple data loader - no complex collate function needed!
     train_loader = DataLoader(
         pytorch_dataset,
-        batch_size=8,
+        batch_size=batch_size,
         shuffle=True,
-        collate_fn=collate_variable_length,
-        num_workers=0
+        collate_fn=simple_collate_fn,
+        num_workers=0,
+        pin_memory=torch.cuda.is_available()
     )
-
-    print(f"Dataset length: {len(pytorch_dataset)}")  # Should be > 0
-
-
-    # for i, batch in enumerate(train_loader):
-    #     print(i)
-    #     torch.save(batch, f'/Volumes/MichaelSSD/dataset/Compiled Data (.npy)/Drive1/batch_{i}.pt')
-        
-
-
+    
+    print(f"Training loader created: {len(train_loader)} batches")
+    
+    # Example: iterate through one batch to show shapes
+    # for batch in train_loader:
+    #     print(f"Batch shapes:")
+    #     for key, value in batch.items():
+    #         if hasattr(value, 'shape'):
+    #             print(f"  {key}: {value.shape}")
+    #         else:
+    #             print(f"  {key}: {len(value)} items")
+    #     break
     
     return dataset, train_loader
 
 if __name__ == "__main__":
-    
-    
-    print("Multi-Modal Action Recognition Dataset Implementation")
+    print("Fixed-Length Multi-Modal Action Recognition Dataset")
     print("Key features:")
-    print("- Variable-length sequences using natural annotation boundaries")
+    print("- Fixed-length sequences for simpler training")
+    print("- Action-boundary aware window extraction")
     print("- Multi-label classification for overlapping actions")
-    print("- Handles missing modality data gracefully")
-    print("- PyTorch-ready with custom collate function")
-    print("- Preserves temporal structure for action recognition")
-    print("- Works with saved aligned data or live aligner objects")
+    print("- No complex padding or collate functions needed")
+    print("- Different extraction strategies per action type")
     
-
-    dataset = create_training_dataset(aligned_data_path='/Volumes/MichaelSSD/dataset/Compiled Data (.npy)/Drive1_aligned.npy', annotations_csv='/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/drives/Drive1/actions.csv')
-
-
-def save_aligned_data_for_training(aligner, save_path: str):
-    """Helper function to save aligned data for later use"""
-    import pickle
-    
-    # Export training-ready format
-    training_data = aligner.export_for_training('numpy')
-    
-    # Add metadata needed for dataset creation
-    training_data['frame_count'] = aligner.aligned_data['frame_count']
-    training_data['stats'] = aligner.aligned_data['stats']
-    
-    with open(save_path, 'wb') as f:
-        pickle.dump(training_data, f)
-    
-    print(f"Aligned data saved to {save_path}")
-    print(f"Load later with: dataset = MultiModalActionDataset(aligned_data_path='{save_path}', annotations_file='annotations.csv')")
+    # Example usage with your data
+    dataset, train_loader = create_fixed_length_training_dataset(
+        aligned_data_path='/Volumes/MichaelSSD/dataset/Compiled Data (.npy)/Drive1_aligned.npy',
+        annotations_csv='/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/drives/Drive1/actions.csv',
+        window_size=64,
+        image_size=224,  # Recommended for Aria glasses
+        batch_size=8
+    )
