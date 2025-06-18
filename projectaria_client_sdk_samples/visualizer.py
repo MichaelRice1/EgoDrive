@@ -19,19 +19,12 @@ import aria.sdk as aria
 import fastplotlib as fpl
 import numpy as np
 from common import ctrl_c_handler
-from projectaria_tools.core import data_provider
-from projectaria_tools.core.sensor_data import SensorDataType, TimeDomain
 
 from projectaria_tools.core.sensor_data import (
     BarometerData,
     ImageDataRecord,
     MotionData,
 )
-try:
-    from inference import infer  # Try local imports first
-except ImportError:
-    from projectaria_eyetracking.projectaria_eyetracking.inference import infer
-import torch 
 
 NANOSECOND = 1e-9
 
@@ -55,7 +48,6 @@ class TemporalWindowPlot:
         self.samples = [deque() for _ in range(dim)]
         self.axes.add_animations(self.update)
         self.count = 0
-        
 
     def add_samples(self, timestamp_ns: float, samples: Sequence[float]):
         # Convert timestamp to seconds
@@ -187,47 +179,12 @@ class AriaVisualizerStreamingClientObserver(BaseStreamingClientObserver):
 
     def __init__(self, visualizer: AriaVisualizer):
         self.visualizer = visualizer
-        self.weights_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/projectaria_client_sdk_samples/projectaria_eyetracking/projectaria_eyetracking/inference/model/pretrained_weights/social_eyes_uncertainty_v1/weights.pth'
-        self.model_config_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/projectaria_client_sdk_samples/projectaria_eyetracking/projectaria_eyetracking/inference/model/pretrained_weights/social_eyes_uncertainty_v1/config.yaml'
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.inference_model = infer.EyeGazeInference(self.weights_path, self.model_config_path, self.device)
-        self.eye_gaze_inference_results = []
-    
 
     def on_image_received(self, image: np.array, record: ImageDataRecord) -> None:
         # Rotate images to match the orientation of the camera
         if record.camera_id != aria.CameraId.EyeTrack:
             image = np.rot90(image)
         else:
-            device_time_ns = image.get_time_ns(TimeDomain.DEVICE_TIME)
-            preds, lower, upper = self.inference_model.predict(image)
-            preds = preds.detach().cpu().numpy()
-            lower = lower.detach().cpu().numpy()
-            upper = upper.detach().cpu().numpy()
-            value_mapping = {
-                    "yaw": preds[0][0],
-                    "pitch": preds[0][1],
-                    "yaw_lower": lower[0][0],
-                    "pitch_lower": lower[0][1],
-                    "yaw_upper": upper[0][0],
-                    "pitch_upper": upper[0][1],
-                }
-            
-            depth_m_str = ""
-
-            eye_gaze_inference_result = [
-                int(device_time_ns / 1000),  # Convert ns to us
-                value_mapping["yaw"],
-                value_mapping["pitch"],
-                depth_m_str,
-                value_mapping["yaw_lower"],
-                value_mapping["pitch_lower"],
-                value_mapping["yaw_upper"],
-                value_mapping["pitch_upper"],
-            ]
-            self.eye_gaze_inference_results.append(eye_gaze_inference_result)
-
-
             image = np.rot90(image, 2)
 
         # Update the image

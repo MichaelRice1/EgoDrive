@@ -138,7 +138,8 @@ base_name = os.path.splitext(vrs_file)[0]  # filename without extension
 
 files_to_check = [os.path.join(folder_path, f'mps_{base_name}_vrs', 'eye_gaze', 'general_eye_gaze.csv'),
                 #   os.path.join(folder_path, f'mps_{base_name}_vrs', 'eye_gaze', 'personalized_eye_gaze.csv'),
-                  os.path.join(folder_path, f'mps_{base_name}_vrs', 'hand_tracking', 'hand_tracking_results.csv')]
+                  os.path.join(folder_path, f'mps_{base_name}_vrs', 'hand_tracking', 'hand_tracking_results.csv'),
+                  os.path.join(folder_path, f'gaze_predictions.csv')]
 
 st.markdown("---")
 
@@ -185,21 +186,19 @@ if process_btn and not st.session_state.processing:
         base_name = os.path.splitext(vrs_file)[0]  # filename without extension
 
         input_dir = os.path.expanduser(folder_path)
-        cmd = ["aria_mps", "single", "-i", input_dir]
+        cmd_mps = ["aria_mps", "single", "-i", input_dir]
         full_vrs_path = os.path.join(input_dir, vrs_file)
-        st.session_state.vde = VRSDataExtractor(full_vrs_path)
-        dp = DataProcessor(st.session_state.vde)
-        st.session_state.results_dict = dp.vrs_processing(full_vrs_path, callbacks={
-        "object_detection": object_detection_progress,
-        "image_extraction": frame_progress_callback,
-        "driving_evaluation": driver_evaluation_progress
-        }) 
+        preds_path = f'{folder_path}/gaze_predictions.csv'
+        cmd_gaze = ['python', '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/projectaria_client_sdk_samples/projectaria_eyetracking/projectaria_eyetracking/model_inference_demo.py' , '--vrs' , full_vrs_path , 
+                    '--output_file' , preds_path , '-c']
+        
+
         if check_files_exist(files_to_check):
-            st.success("✅ All files already processed!")       
+            st.success("✅ All external files already present!")       
         else:
-            st.info("🔄 Starting processing with aria_mps...")
+            st.info("🔄 Retrieving Gaze Estimations")
             try:
-                subprocess.Popen(cmd)  # non-blocking
+                subprocess.Popen(cmd_gaze)  # non-blocking
                 st.session_state.processing = True
                 st.session_state.start_time = time.time()
                 st.session_state.stop_waiting = False
@@ -207,6 +206,15 @@ if process_btn and not st.session_state.processing:
                 st.session_state.base_name = base_name  # save base name for output check
             except Exception as e:
                 st.error(f"❌ Failed to run aria_mps: {e}")
+
+        st.session_state.vde = VRSDataExtractor(full_vrs_path)
+        dp = DataProcessor(st.session_state.vde)
+        st.session_state.results_dict = dp.vrs_processing(full_vrs_path, callbacks={
+        "object_detection": object_detection_progress,
+        "image_extraction": frame_progress_callback,
+        "driving_evaluation": driver_evaluation_progress
+        }, preds_path=preds_path) 
+        
     else:
         st.warning("⚠️ No .vrs files found in the selected folder.")
 

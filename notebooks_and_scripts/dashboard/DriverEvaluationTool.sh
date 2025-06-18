@@ -6,7 +6,7 @@ cd /Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis
 source /Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/.venv/bin/activate
 
 # Full project path
-PROJECT_DIR="/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/final"
+PROJECT_DIR="/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/dashboard"
 
 cd "$PROJECT_DIR"
 

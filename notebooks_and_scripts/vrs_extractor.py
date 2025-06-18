@@ -60,6 +60,7 @@ class VRSDataExtractor():
         self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
         
         self.device_calibration = self.provider.get_device_calibration()
+        self.rgb_camera_calibration = self.device_calibration.get_camera_calib('camera-rgb')
 
         
         # self.provider.set_devignetting(True)
@@ -306,9 +307,9 @@ class VRSDataExtractor():
                         rgb_camera_calibration,
                         depth_m=gaze_point.depth
                     )
-                
-                gaze_projection = gaze_projection * (512/1408)
-                gaze_projection = [512 - gaze_projection[1], gaze_projection[0]] 
+                if gaze_projection is not None:
+                    gaze_projection = gaze_projection * (512/1408)
+                    gaze_projection = [512 - gaze_projection[1], gaze_projection[0]] 
                 
                 gaze_points[ts] = {
                     "projection": gaze_projection,
@@ -1066,6 +1067,14 @@ class VRSDataExtractor():
 
         self.result['object_detections'] = results
 
+    def generate_gaussian_mask(self, shape, center, sigma=20):
+        x = np.arange(0, shape[1])
+        y = np.arange(0, shape[0])
+        x, y = np.meshgrid(x, y)
+        d = np.sqrt((x - center[0])**2 + (y - center[1])**2)
+        g = np.exp(-(d**2 / (2.0 * sigma**2)))
+        return g
+
     def overlay_gaze_heatmap(self, frame, center, angle_error, threshold=0.05):
         h, w = frame.shape[:2]
         fov = 110
@@ -1095,7 +1104,7 @@ class VRSDataExtractor():
 
         return blended, xmin, ymin, xmax, ymax
 
-    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz,hand_lm, video_save_path, progress_callback=None):
+    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz,hand_lm, video_save_path, progress_callback=None, gaze_predictions = None):
         consecutive_frames_threshold = 8
         overlays = []
 
@@ -1114,12 +1123,16 @@ class VRSDataExtractor():
 
         direction = "Forward"
 
+        if gaze_predictions is not None:
+            smoothed_gaze = gaze_predictions
+
         for i, (frame, sg, od, hlm) in enumerate(zip(frames, smoothed_gaze, object_dets, hand_lm)):
             
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            sg = int(sg[0] * (512 / 1408)), int(sg[1] * (512 / 1408))
+            if gaze_predictions is not None:
+                sg = int(sg[0] * (512 / 1408)), int(sg[1] * (512 / 1408))
 
-            overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=8, threshold=0.1)
+            overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=4, threshold=0.1)
             gaussian_area = (xmax - xmin) * (ymax - ymin)
 
             imu_per_frame = 1000 / 15 
