@@ -29,8 +29,10 @@ class DatasetAnnotator:
         personalized_gaze_path = os.path.join(full_path, f'mps_{name}_vrs', 'eye_gaze', 'personalized_eye_gaze.csv')
 
         if os.path.exists(gaze_path) and os.path.exists(personalized_gaze_path):
+            print('hi1')
             vde.get_gaze_data(gaze_path, personalized_gaze_path)
         elif os.path.exists(gaze_path):
+            print('hi2')
             vde.get_gaze_data(gaze_path, None)
         else:
             print(f"Gaze data not found at: {gaze_path}. Skipping gaze data processing.")

@@ -1,5 +1,6 @@
 
 
+
 import os 
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -83,27 +84,27 @@ class DataProcessor:
 
 
 
-        imu_vals =  list(vde.result['imu_right'].values())
-        imu_gyro_x_samples = [g[3] for g in imu_vals]
-        imu_gyro_y_samples = [g[4] for g in imu_vals]
-        imu_gyro_z_samples = [g[5] for g in imu_vals]
+        # imu_vals =  list(vde.result['imu_right'].values())
+        # imu_gyro_x_samples = [g[3] for g in imu_vals]
+        # imu_gyro_y_samples = [g[4] for g in imu_vals]
+        # imu_gyro_z_samples = [g[5] for g in imu_vals]
 
         vde.get_object_dets(progress_callback=callbacks.get('object_detection'))
-        video_save_path = os.path.join('/',*split, 'video')
-        hand_data = list(vde.result['hand_landmarks'].values())
+        # video_save_path = os.path.join('/',*split, 'video')
+        # hand_data = list(vde.result['hand_landmarks'].values())
 
         
 
-        vde.evaluate_driving(list(vde.result['rgb'].values()),vde.result['smoothed_gaze'],vde.result['object_detections'],
-                             imu_gyro_x_samples,imu_gyro_y_samples,imu_gyro_z_samples,hand_data,video_save_path, progress_callback=callbacks.get('driving_evaluation'), gaze_predictions=vde.result.get('gaze_predictions', None))
+        # vde.evaluate_driving(list(vde.result['rgb'].values()),vde.result['smoothed_gaze'],vde.result['object_detections'],
+        #                      imu_gyro_x_samples,imu_gyro_y_samples,imu_gyro_z_samples,hand_data,video_save_path, progress_callback=callbacks.get('driving_evaluation'), gaze_predictions=vde.result.get('gaze_predictions', None))
 
-        vde.score_driver(vde.num_frames_rgb, vde.result['joined_intervals'], video_save_path)
+        # vde.score_driver(vde.num_frames_rgb, vde.result['joined_intervals'], video_save_path)
 
 
         # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'
         # vde.get_slam_data(slam_path)
 
-        # vde.save_data(output_path)
+        vde.save_data(output_path)
 
 
         return vde.result
@@ -113,7 +114,7 @@ class DataProcessor:
 if __name__ == "__main__":
     dp = DataProcessor()
 
-    drive_no = 1
-    dp.vrs_processing(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/drives/Drive{drive_no}/Drive{drive_no}.vrs')
+    drive_no = 9
+    dp.vrs_processing(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/Drive{drive_no}/Drive{drive_no}.vrs')
 
 

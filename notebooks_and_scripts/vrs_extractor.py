@@ -215,7 +215,7 @@ class VRSDataExtractor():
         if not rgb_flag:
             for index in range(start_index_et, end_index_et):
                 image_data = self.provider.get_image_data_by_index(self.stream_mappings['camera-eyetracking'], index)[0].to_numpy_array()
-                et_images[et_ts[index]] = img
+                et_images[et_ts[index]] = image_data
                 
             self.result['et'] = et_images
             print(f"Extracted {len(self.result['et'])} images from {etlabel} stream")
@@ -316,6 +316,7 @@ class VRSDataExtractor():
                     'depth': gaze_point.depth,
                 }
         self.result['gaze'] = gaze_points
+        print(f"Extracted {len(gaze_points)} gaze points")
 
         p_gaze_points = {}
         # Process personalized gaze data
@@ -407,7 +408,8 @@ class VRSDataExtractor():
         right_palm_normal_tip = None
 
 
-        NORMAL_VIS_LEN = 0.05  # meters
+        NORMAL_VIS_LEN = 0.5  # meters
+        scale = 512/1408
 
         
         if hand_tracking_result.left_hand:
@@ -478,18 +480,30 @@ class VRSDataExtractor():
                     * NORMAL_VIS_LEN,
                     key,
                 )
+
+        scaled_left_wrist = np.array([left_wrist]) * scale if left_wrist is not None else None
+        scaled_left_palm = np.array([left_palm]) * scale if left_palm is not None else None
+        scaled_right_wrist = np.array([right_wrist]) * scale if right_wrist is not None else None
+        scaled_right_palm = np.array([right_palm]) * scale if right_palm is not None else None
+        scaled_left_wrist_normal = np.array([left_wrist_normal_tip]) * scale if left_wrist_normal_tip is not None else None
+        scaled_left_palm_normal = np.array([left_palm_normal_tip]) * scale if left_palm_normal_tip is not None else None
+        scaled_right_wrist_normal = np.array([right_wrist_normal_tip]) * scale if right_wrist_normal_tip is not None else None
+        scaled_right_palm_normal = np.array([right_palm_normal_tip]) * scale if right_palm_normal_tip is not None else None
+        scaled_right_landmarks = [[v * scale for v in point] for point in right_landmarks if point is not None] if right_landmarks is not None else None
+        scaled_left_landmarks = [[v * scale for v in point] for point in left_landmarks if point is not None] if left_landmarks is not None else None
+
         
         return (
-            left_wrist,
-            left_palm,
-            right_wrist,
-            right_palm,
-            left_wrist_normal_tip,
-            left_palm_normal_tip,
-            right_wrist_normal_tip,
-            right_palm_normal_tip,
-            left_landmarks,
-            right_landmarks
+            scaled_left_wrist,
+            scaled_left_palm,
+            scaled_right_wrist,
+            scaled_right_palm,
+            scaled_left_wrist_normal,
+            scaled_left_palm_normal,
+            scaled_right_wrist_normal,
+            scaled_right_palm_normal,
+            scaled_left_landmarks,
+            scaled_right_landmarks
         )
     
     def get_hand_data(self, hand_path:str, start_index=0, end_index=None):
@@ -501,7 +515,6 @@ class VRSDataExtractor():
 
         hand_tracking_results = mps.hand_tracking.read_hand_tracking_results(hand_path)
 
-        # frame_timestamps = list(hand_frames_data.keys())
 
         if start_index == 0 and end_index == None:
             num_hw = len(hand_tracking_results)
@@ -521,6 +534,16 @@ class VRSDataExtractor():
                 (left_wrist,left_palm,right_wrist,right_palm,left_wrist_normal,left_palm_normal,
                  right_wrist_normal,right_palm_normal,left_landmarks,right_landmarks) = self.get_landmark_pixels('rgb', hand_point)
                 
+                if left_wrist is not None:
+                    left_wrist =  [512 - left_wrist[0][1], left_wrist[0][0]]
+                if left_palm is not None:
+                    left_palm =  [512 - left_palm[0][1], left_palm[0][0]]
+                if right_wrist is not None:
+                    right_wrist =  [512 - right_wrist[0][1], right_wrist[0][0]]
+                if right_palm is not None:
+                    right_palm =  [512 - right_palm[0][1], right_palm[0][0]]
+
+
         
                 hand_landmarks[ts] = {
                     "left_wrist": left_wrist ,
@@ -848,12 +871,9 @@ class VRSDataExtractor():
             '1': 'checking right wing mirror',
             '2': 'checking left wing mirror',
             '3': 'checking rear view mirror',
-            '4': 'left turn',
-            '5': 'right turn',
-            '6': 'lane change',
-            '7': 'mobile phone usage',
-            '8': 'driving',
-            '9': 'idle'
+            '4': 'mobile phone usage',
+            '5': 'driving',
+            '6': 'idle'
         }
 
         blur_label_map = {
@@ -868,7 +888,15 @@ class VRSDataExtractor():
         FRAME_INTERVAL = 1.0 / fps
 
         sorted_ts = sorted(frames_dict.keys())
-        gaze_points = list(self.result['personalized_gaze'].values())[::2]
+
+        len_pgaze = len(self.result.get('personalized_gaze', {}))
+        len_gaze = len(self.result.get('gaze', {}))
+        
+        if len_pgaze > len_gaze:
+            gaze_points = list(self.result['personalized_gaze'].values())[::2]
+        else:
+            gaze_points = list(self.result['gaze'].values())[::2]
+            print(len(gaze_points), "gaze points available for annotation")
 
         if not sorted_ts:
             print("No frames to label!")
@@ -908,7 +936,6 @@ class VRSDataExtractor():
                 frame = frames_dict[ts].copy()
 
                 if current_idx >= len(gaze_points):
-                    print("No more gaze points available.")
                     projection = None
                     depth = None
                 else:
@@ -1129,7 +1156,7 @@ class VRSDataExtractor():
         for i, (frame, sg, od, hlm) in enumerate(zip(frames, smoothed_gaze, object_dets, hand_lm)):
             
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            if gaze_predictions is not None:
+            if gaze_predictions is None:
                 sg = int(sg[0] * (512 / 1408)), int(sg[1] * (512 / 1408))
 
             overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=4, threshold=0.1)
