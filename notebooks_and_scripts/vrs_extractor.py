@@ -9,20 +9,11 @@ import csv
 from time import time
 import pandas as pd
 import tqdm
-import io
 from ultralytics import YOLO
 from typing import Dict, List, Optional
 from filterpy.kalman import KalmanFilter
-import matplotlib.pyplot as plt
-
-'''
-import mediapipe as mp
-from mediapipe import solutions
-from mediapipe.framework.formats import landmark_pb2
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-'''
-from projectaria_tools.core import data_provider, calibration
+from notebooks_and_scripts.dataset.scripts.GazeProcessor import project_gaze
+from projectaria_tools.core import data_provider
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
 from projectaria_tools.core.stream_id import StreamId
 import projectaria_tools.core.mps as mps
@@ -31,19 +22,13 @@ from projectaria_tools.core.mps.utils import (
     get_gaze_vector_reprojection,
     get_nearest_eye_gaze,
     get_nearest_pose,
-    filter_points_from_confidence,
     get_nearest_hand_tracking_result
 )
-from projectaria_tools.core.calibration import (
-    device_calibration_from_json_string,
-    distort_by_calibration,
-    get_linear_camera_calibration,
-)
+
 os.environ['YOLO_VERBOSE'] = 'False'
 
 import sys
 sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/unused/')
-from OtherModelScripts import ego_blur 
 
 
 class VRSDataExtractor():
@@ -290,7 +275,8 @@ class VRSDataExtractor():
                 p_et_ts = [personalized_gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
             #hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
 
-
+        if gaze_path is not None:
+            self.result['gaze_projected'] = project_gaze(gaze_path, self.path)
         for ts in et_ts:
             gaze_point = get_nearest_eye_gaze(gaze_cpf, ts)
 
@@ -318,9 +304,15 @@ class VRSDataExtractor():
         self.result['gaze'] = gaze_points
         print(f"Extracted {len(gaze_points)} gaze points")
 
+
+
         p_gaze_points = {}
         # Process personalized gaze data
         if personalized_gaze_path:
+
+            self.result['pgaze_projected'] = project_gaze(personalized_gaze_path, self.path)
+
+
             for ts in p_et_ts:
                 personalized_gaze_point = get_nearest_eye_gaze(personalized_gaze_cpf, ts)
 
@@ -1060,7 +1052,7 @@ class VRSDataExtractor():
             1: 'Left Wing Mirror',
             2: 'Mobile Phone',
             3: 'Rearview Mirror',
-            4: 'Right Wing Wheel',
+            4: 'Right Wing Mirror',
             5: 'Steering Wheel'
         }
         

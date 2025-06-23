@@ -50,8 +50,6 @@ class DataProcessor:
             vde.result['gaze_predictions'] = gaze_preds
 
 
-        
-
         vde.get_image_data(rgb_flag=False, progress_callback=callbacks.get('image_extraction'))
         split = path.split('/')[:-1]
         output_path = os.path.join('/',*split, path.split('/')[-1].split('.')[0] + '.npy')
@@ -81,7 +79,6 @@ class DataProcessor:
         
         vde.get_GPS_data()
         vde.get_IMU_data()
-
 
 
         # imu_vals =  list(vde.result['imu_right'].values())

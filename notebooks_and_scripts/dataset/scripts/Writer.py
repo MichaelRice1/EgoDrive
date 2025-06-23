@@ -1,0 +1,54 @@
+from Aligner import EgoDriveAriaAligner
+from EgoDriveAriaDataset import EgoDriveAriaDataset
+import os
+import sys
+import numpy as np
+sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/')
+from data_processing_main import DataProcessor
+
+class Writer:
+    def __init__(self,folder_path):
+
+        self.folder_path = folder_path
+        
+
+    def write(self, folder_path):
+
+        folders = os.listdir(folder_path)
+        
+
+        for folder in folders:
+            if '9' not in folder:
+                continue
+            folder_path = os.path.join(self.folder_path, folder)
+            vrs_path = os.path.join(folder_path, f'{folder}.vrs')
+            dp = DataProcessor()
+            
+            data_path = os.path.join(folder_path, f'{folder}.npy')
+            if os.path.exists(data_path):
+                data = np.load(data_path, allow_pickle=True).item()
+            else:
+                data = dp.vrs_processing(vrs_path)
+            
+            aligner = EgoDriveAriaAligner(data=data,primary_visual_modality='rgb', max_time_gap=5e7)
+            aligned_data = aligner.align_drive()
+
+            annotations_path = os.path.join(folder_path, 'actions.csv')
+            dataset_creator = EgoDriveAriaDataset(aligned_data, image_size=224, frames_per_clip=32, annotations_path=annotations_path)
+            # dataset = dataset_creator.write_drive()
+
+            break
+
+
+
+
+if __name__ == "__main__":
+    folder_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive'
+
+    writer = Writer(folder_path)
+    writer.write(folder_path)
+
+            
+        
+
+    
