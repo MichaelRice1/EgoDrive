@@ -422,7 +422,7 @@ class EgoDriveAriaAligner:
         # # Align data
         aligned_dataset = aligner.align()
 
-        np.save('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/Drive9/Drive9_aligned.npy', aligned_dataset, allow_pickle=True)
+        # np.save('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/Drive9/Drive9_aligned.npy', aligned_dataset, allow_pickle=True)
 
 
         return aligned_dataset

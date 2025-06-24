@@ -3,7 +3,7 @@ import cv2
 from torch.utils.data import Dataset
 import os 
 import pandas as pd 
-
+import matplotlib.pyplot as plt
 
 class EgoDriveAriaDataset():
 
@@ -22,9 +22,9 @@ class EgoDriveAriaDataset():
         expanded = pd.DataFrame(columns=['start_frame', 'end_frame', 'action'])
 
         for _, row in annotations.iterrows():
-            start_frame = int(row[0])
-            end_frame = int(row[1])
-            action = row[2]
+            start_frame = row.iloc[0]
+            end_frame = row.iloc[1]
+            action = row.iloc[2]
             len = end_frame - start_frame + 1
             rem = self.frames_per_clip - len
 
@@ -58,33 +58,297 @@ class EgoDriveAriaDataset():
 
         return expanded 
     
+    def evaluate_data_point(self, data, save_path):
+        frames = data['frames']
+        gaze = data['gaze']
+        imu_data = data['imu']
+        hands = data['hands']
+        object_detections = data['object_detections']
 
-    def process(self, data,annotations_path):
+        concat = np.concatenate(imu_data, axis=0)  # Concatenate all IMU data
+        imu_data = [i[0:6] for i in concat]  # Extract first 6 channels
 
+        imu_accel_x = [sample[0] for sample in imu_data]
+        imu_accel_y = [sample[1] for sample in imu_data]
+        imu_accel_z = [sample[2] for sample in imu_data]
+
+        imu_gyro_x = [sample[3] for sample in imu_data]
+        imu_gyro_y = [sample[4] for sample in imu_data]
+        imu_gyro_z = [sample[5] for sample in imu_data]
+
+        # Save acceleration plot
+        plt.figure(figsize=(10, 5))
+        plt.plot(imu_accel_x, label='Accel X', color='r')
+        plt.plot(imu_accel_y, label='Accel Y', color='g')
+        plt.plot(imu_accel_z, label='Accel Z', color='b')
+        plt.title('IMU Acceleration')
+        plt.xlabel('Sample Index')
+        plt.ylabel('Acceleration (m/s²)')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f'{save_path}/imu_acceleration_plot.png')  # Save the plot
+        plt.close()  # Close the figure to free memory
+
+        # Save gyroscope plot
+        plt.figure(figsize=(10, 5))
+        plt.plot(imu_gyro_x, label='Gyro X', linestyle='--', color='r')
+        plt.plot(imu_gyro_y, label='Gyro Y', linestyle='--', color='g')
+        plt.plot(imu_gyro_z, label='Gyro Z', linestyle='--', color='b')
+        plt.title('IMU Gyroscope')
+        plt.xlabel('Sample Index')
+        plt.ylabel('Angular Velocity (rad/s)')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f'{save_path}/imu_gyroscope_plot.png')  # Save the plot
+        plt.close()  # Close the figure to free memory
         
+
+        # Save annotated frames as a video
+        output_video_path = f'{save_path}/annotated_video.mp4'
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = 15  # Frames per second
+        frame_size = (224, 224)
+
+        video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, frame_size)
+
+        for f, g, h, o in zip(frames, gaze, hands, object_detections):
+            rgb = cv2.cvtColor(f, cv2.COLOR_BGR2RGB)
+
+            gaze_x, gaze_y = g
+
+            gaze_f = cv2.circle(rgb.copy(),
+                                (int(gaze_x * 224), int(gaze_y * 224)),
+                                radius=5, color=(255, 0, 0), thickness=-1)
+
+            hands_f = gaze_f.copy()
+            for i in range(0, len(h), 2):
+                if h[i] is not None and h[i + 1] is not None:
+                    hands_f = cv2.circle(hands_f,
+                                        (int(h[i] * 224), int(h[i + 1] * 224)),
+                                        radius=5, color=(0, 255, 0), thickness=-1)
+
+
+            for i in range(0, len(o), 6):
+                if o[i] != 0:
+                    x = int(o[i+1] * 224)
+                    y = int(o[i + 2] * 224)
+                    width = int(o[i + 3] * 224)
+                    height = int(o[i + 4] * 224)
+
+                    # Draw bounding box
+                    cv2.rectangle(hands_f,
+                                (x, y),
+                                (x + width, y + height),
+                                color=(0, 0, 255), thickness=2)
+
+                    # Draw gaze intersection point
+                    if o[i + 5] == 1.0:
+                        cv2.circle(hands_f,
+                                (x + width // 2, y + height // 2),
+                                radius=5, color=(255, 255, 0), thickness=-1)
+
+            video_writer.write(hands_f)
+
+        video_writer.release()
+
+    def process_object_detections_with_gaze(self, detections, gaze_point):
+        """
+        Enhanced object features including gaze-relative information
+        Features per object: [presence, x, y, width, height, gaze_intersects, gaze_distance]
+        """
+        target_objects = ['Right Wing Mirror', 'Left Wing Mirror', 'Rearview Mirror', 
+                        'Steering Wheel', 'Mobile Phone', 'Gear Stick']
+        features = np.zeros(36)  # 6 objects × 7 features each
+        
+        gx, gy = gaze_point[0] if gaze_point[0] is not None else 0.5, \
+                gaze_point[1] if gaze_point[1] is not None else 0.5
+        
+        
+        for i, obj_class in enumerate(target_objects):
+            start_idx = i * 6
+
+            classes = [d['class'] for d in detections if 'class' in d]
+
+            if obj_class in classes:
+                
+                entry = next((d for d in detections if d.get('class') == obj_class), None)
+                # Standard object features
+                bbox = entry.get('bounding_box', {})
+                x = bbox[0]
+                y = bbox[1]
+                width = bbox[2] - bbox[0]
+                height = bbox[3] - bbox[1]
+
+                # Normalize coordinates
+                x = x / 512
+                y = y / 512
+                width = width / 512
+                height = height / 512
+
+                det = [x, y, width, height]
+
+
+                features[start_idx + 0] = 1.0  
+                features[start_idx + 1] = x
+                features[start_idx + 2] = y
+                features[start_idx + 3] = width
+                features[start_idx + 4] = height
+
+                
+                # Gaze-object interaction features
+                features[start_idx + 5] = 1.0 if self.is_gaze_in_bbox(gx, gy, det) else 0.0
+                
+                
+        return features
+
+    def is_gaze_in_bbox(self,gx, gy, detection):
+        """Check if normalized gaze point is within detection bounding box"""
+        # Convert detection bbox to normalized coordinates
+        x = detection[0]
+        y = detection[1]
+        width = detection[2]
+        height = detection[3]
+        
+        # Check if gaze point is within bounding box
+        return (x <= gx <= x + width) and (y <= gy <= y + height)
+
+    def process_folder(self, data, annotations_path):
         if not os.path.exists(annotations_path):
             print(f"Annotations {annotations_path} does not exist. Skipping.")
             return
-        
+
         annotations = pd.read_csv(annotations_path)
 
-        frames = list(data['modalities']['rgb'].values())
+        frames = data['modalities']['rgb']
         num_frames = len(frames)
 
-        expanded_annotations = self.processed_annotations(annotations,num_frames, self.frames_per_clip)
+        expanded_annotations = self.processed_annotations(num_frames, annotations)
+        samples = []
 
-        for start,end,action in zip(expanded_annotations['start_frame'], 
-                                                        expanded_annotations['end_frame'], 
-                                                        expanded_annotations['action']):
+        for start, end, action in zip(expanded_annotations['start_frame'], 
+                                    expanded_annotations['end_frame'], 
+                                    expanded_annotations['action']):
             start = int(start)
             end = int(end)
             action = str(action)
+
+            frames_processed = []
+            gaze_processed = []
+            hands_processed = []
+            imu_processed = []
+            hands_processed = []
+            object_detections_processed = []
+
+            frames_segment = frames[start:end+1]
+            gaze_segment = data['modalities']['gaze'][start:end+1]
+            imu_segment = data['modalities']['imu_right'][start:end+1]
+            hand_landmarks_segment = data['modalities']['hand_landmarks'][start:end+1]
+            object_detections_segment = data['modalities']['object_detections'][start:end+1]
+
+
+
+            # Resize images and normalize gaze coordinates
+            for f, g, h, o, i in zip(frames_segment, gaze_segment, hand_landmarks_segment, object_detections_segment, imu_segment):
+                # Resize image
+
+                img_rs = cv2.resize(f, (self.image_size, self.image_size), interpolation=cv2.INTER_LINEAR)
+                frames_processed.append(img_rs)
+
+                # Process IMU data
+                imu_processed.append(i)
+
+                # Normalize gaze coordinates
+                if g is not None and len(g) > 0:
+                    projs = []
+                    for gaze_point in g:
+                        if gaze_point is not None and 'projection' in gaze_point:
+                            projs.append(gaze_point['projection'])
+                    if projs:
+                        mean_g = np.mean(projs, axis=0)
+                        mean_g = mean_g * (224 / 512)  # Assuming original image size is 1920x1080
+                        norm_gx, norm_gy = mean_g[0] / 224, mean_g[1] / 224
+                        gaze_processed.append([norm_gx, norm_gy])
+                    else:
+                        gaze_processed.append([None, None])
+                else:
+                    gaze_processed.append([None, None])
+
+                
+
+                hands = []
+                # Process left palm
+                if 'left_palm' in h and h['left_palm'] is not None:
+                    left_palm_normal = (h['left_palm'][0], h['left_palm'][1])
+                    left_palm_normal = np.array(left_palm_normal) * (224 / 512)
+                    norm_lpx, norm_lpy = round(left_palm_normal[0] / 224, 4), round(left_palm_normal[1] / 224, 4)
+                    hands.append([norm_lpx, norm_lpy])
+                else:
+                    hands.append([None, None])
+                
+                if 'left_wrist' in h and h['left_wrist'] is not None:
+                    left_wrist_normal = (h['left_wrist'][0], h['left_wrist'][1])
+                    left_wrist_normal = np.array(left_wrist_normal) * (224 / 512)
+                    norm_lwx, norm_lwy = round(left_wrist_normal[0] / 224, 4), round(left_wrist_normal[1] / 224, 4)
+                    hands.append([norm_lwx, norm_lwy])
+                else:
+                    hands.append([None, None])
+
+                
+                # Process right palm
+                if 'right_palm' in h and h['right_palm'] is not None:
+                    right_palm_normal = (h['right_palm'][0], h['right_palm'][1])
+                    right_palm_normal = np.array(right_palm_normal) * (224 / 512)
+                    norm_rpx, norm_rpy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
+                    hands.append([norm_rpx, norm_rpy])
+                else:
+                    hands.append([None, None])
+                            
+                # Process right wrist
+                if 'right_wrist' in h and h['right_wrist'] is not None:
+                    right_palm_normal = (h['right_wrist'][0], h['right_wrist'][1])
+                    right_palm_normal = np.array(right_palm_normal) * (224 / 512)
+                    norm_rwx, norm_rwy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
+                    hands.append([norm_rwx, norm_rwy])
+                else:
+                    hands.append([None, None])
+                
+                hands = np.array(hands, dtype=object).flatten().tolist()  # Flatten the list to match expected format
+                hands_processed.append(hands)
+
+                # Process object detections
+                if o is not None and len(o) > 0:
+                    features = self.process_object_detections_with_gaze(o, gaze_processed[-1])
+                    object_detections_processed.append(features)
+
+            sample = {'frames': frames_processed,
+                    'gaze': gaze_processed,
+                    'imu': imu_processed,
+                    'hands': hands_processed,
+                    'object_detections': object_detections_processed}
+            
+            samples.append(sample)
+            
+            split = annotations_path.split('/')
+            video_path = '/'.join(split[:-2])
+            action_path = os.path.join(video_path,'processed', f'{action}')
+            video_name = os.path.join(action_path, f'{split[-2]}_{start}_{end}')
+
+            
+            if not os.path.exists(action_path):
+                os.makedirs(action_path)
+            
+            if not os.path.exists(video_name):
+                os.makedirs(video_name)
+            
+            self.evaluate_data_point(sample, video_name)
+            np.save(os.path.join(video_name, 'data.npy'), sample)
         
 
     def write_drive(self):
 
-        dataset = self.process(self.data, self.annotations_path)
+        self.process_folder(self.data, self.annotations_path)
 
-        return dataset
         
 

@@ -4,6 +4,7 @@ import os
 import numpy as np
 from PIL import Image
 import torch
+import random
 import cv2
 import csv
 from time import time
@@ -12,7 +13,6 @@ import tqdm
 from ultralytics import YOLO
 from typing import Dict, List, Optional
 from filterpy.kalman import KalmanFilter
-from notebooks_and_scripts.dataset.scripts.GazeProcessor import project_gaze
 from projectaria_tools.core import data_provider
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
 from projectaria_tools.core.stream_id import StreamId
@@ -275,8 +275,7 @@ class VRSDataExtractor():
                 p_et_ts = [personalized_gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
             #hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
 
-        if gaze_path is not None:
-            self.result['gaze_projected'] = project_gaze(gaze_path, self.path)
+            # self.result['gaze_projected'] = project_gaze(gaze_path, self.path)
         for ts in et_ts:
             gaze_point = get_nearest_eye_gaze(gaze_cpf, ts)
 
@@ -310,7 +309,7 @@ class VRSDataExtractor():
         # Process personalized gaze data
         if personalized_gaze_path:
 
-            self.result['pgaze_projected'] = project_gaze(personalized_gaze_path, self.path)
+            # self.result['pgaze_projected'] = project_gaze(personalized_gaze_path, self.path)
 
 
             for ts in p_et_ts:
@@ -1077,6 +1076,12 @@ class VRSDataExtractor():
                             'confidence': result[0].boxes.conf[j],
                             'bounding_box': result[0].boxes.xyxy[j]
                         })
+                        
+                        if result[0].boxes.cls[j] == 5:
+                            rand = random.random()
+                            if rand < 0.05:
+                                rgb = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                                cv2.imwrite(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/incabin_object_detection_datasets/extracted_sw_images_2/{i}.jpg', image)
 
             results.append(image_dets)
 

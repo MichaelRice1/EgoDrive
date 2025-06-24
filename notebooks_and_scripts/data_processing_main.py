@@ -101,7 +101,7 @@ class DataProcessor:
         # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'
         # vde.get_slam_data(slam_path)
 
-        vde.save_data(output_path)
+        # vde.save_data(output_path)
 
 
         return vde.result
