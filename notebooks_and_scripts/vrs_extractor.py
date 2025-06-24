@@ -1081,7 +1081,7 @@ class VRSDataExtractor():
                             rand = random.random()
                             if rand < 0.05:
                                 rgb = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                                cv2.imwrite(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/incabin_object_detection_datasets/extracted_sw_images_2/{i}.jpg', image)
+                                cv2.imwrite(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/incabin_object_detection_datasets/extracted_sw_images_2/{i}.jpg', rgb)
 
             results.append(image_dets)
 
