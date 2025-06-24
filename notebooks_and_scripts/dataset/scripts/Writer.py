@@ -12,12 +12,15 @@ class Writer:
         self.folder_path = folder_path
         
 
-    def write(self, folder_path):
+    def write(self, folder_path, completed_folders=None):
 
         folders = os.listdir(folder_path)
         
 
         for folder in folders:
+            if folder in completed_folders:
+                print(f'Skipping {folder} as it has already been processed.')
+                continue
             if folder.startswith('Drive'):
             
                 folder_path = os.path.join(self.folder_path, folder)
@@ -48,9 +51,9 @@ class Writer:
 
 if __name__ == "__main__":
     folder_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive'
-
+    written_folders = ['Drive1_1','Drive1_2','Drive1_3','Drive9']
     writer = Writer(folder_path)
-    writer.write(folder_path)
+    writer.write(folder_path, written_folders)
 
             
         
