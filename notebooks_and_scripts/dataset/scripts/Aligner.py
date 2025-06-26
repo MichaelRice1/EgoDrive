@@ -381,12 +381,12 @@ class EgoDriveAriaAligner:
         len_pgaze = len(aligner.data['personalized_gaze']) if 'personalized_gaze' in aligner.data else 0
 
         vals = list(aligner.data['personalized_gaze'].values()) if 'personalized_gaze' in aligner.data else []
-        
+
         null_count = sum(1 for g in vals if g['projection'] is None)
         print(f'Number of null personalized gaze points: {null_count}')        
 
         
-        if len_pgaze > 0:
+        if len_pgaze > 0 and null_count < 50:
             # If personalized gaze data exists, use it
             gaze_data = aligner.data['personalized_gaze']
         else:
