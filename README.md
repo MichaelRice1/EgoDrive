@@ -8,8 +8,8 @@
 EgoDrive Aria Dataset - Michael Rice
 
 <p align="center">
-  <img src="/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/other/images_gifs/output.gif" width="49%" alt="Dataset Modality Visualization" />
-  <img src="/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/other/images_gifs/annotated_video-6.gif" width="49%" alt="Sample Action Sample" />
+  <img src="images_gifs/output.gif" width="49%" alt="Dataset Modality Visualization" />
+  <img src="images_gifs/annotated_video-6.gif" width="49%" alt="Sample Action Sample" />
 </p>
 
 
