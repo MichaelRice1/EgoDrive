@@ -12,3 +12,5 @@ data
 train
 notebooks_and_scripts/best_swin_video_model.pth
 notebooks_and_scripts/dataset/scripts/GazeProcessor.py
+__pycache__
+.gitignore
