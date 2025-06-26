@@ -379,10 +379,14 @@ class EgoDriveAriaAligner:
         rgb_data = aligner.data['rgb']
 
         len_pgaze = len(aligner.data['personalized_gaze']) if 'personalized_gaze' in aligner.data else 0
-        len_gaze = len(aligner.data['gaze']) if 'gaze' in aligner.data else 0
+
+        vals = list(aligner.data['personalized_gaze'].values()) if 'personalized_gaze' in aligner.data else []
+        
+        null_count = sum(1 for g in vals if g['projection'] is None)
+        print(f'Number of null personalized gaze points: {null_count}')        
 
         
-        if len_pgaze > len_gaze:
+        if len_pgaze > 0:
             # If personalized gaze data exists, use it
             gaze_data = aligner.data['personalized_gaze']
         else:
@@ -392,7 +396,6 @@ class EgoDriveAriaAligner:
                 gaze_data = aligner.data['gaze']
             else:
                 raise ValueError("No gaze data found in the dataset.")
-
 
         
         imu_right_data = aligner.data['imu_right']
@@ -421,6 +424,7 @@ class EgoDriveAriaAligner:
         
         # # Align data
         aligned_dataset = aligner.align()
+
 
         # np.save('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/Drive9/Drive9_aligned.npy', aligned_dataset, allow_pickle=True)
 

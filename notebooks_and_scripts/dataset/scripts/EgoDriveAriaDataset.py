@@ -14,6 +14,7 @@ class EgoDriveAriaDataset():
         self.image_size = image_size
         self.frames_per_clip = frames_per_clip
         self.annotations_path = annotations_path
+        self.last_valid_gaze = [0.5, 0.5]  
 
     
 
@@ -162,8 +163,12 @@ class EgoDriveAriaDataset():
                         'Steering Wheel', 'Mobile Phone', 'Gear Stick']
         features = np.zeros(36)  # 6 objects × 7 features each
         
-        gx, gy = gaze_point[0] if gaze_point[0] is not None else 0.5, \
-                gaze_point[1] if gaze_point[1] is not None else 0.5
+        if gaze_point is not None and len(gaze_point) >= 2:
+            gx, gy = gaze_point[0], gaze_point[1]
+            self.last_valid_gaze = gaze_point
+
+        elif gaze_point is None or len(gaze_point) < 2:
+            gx, gy = self.last_valid_gaze[0], self.last_valid_gaze[1]
         
         
         for i, obj_class in enumerate(target_objects):
@@ -248,6 +253,7 @@ class EgoDriveAriaDataset():
             object_detections_segment = data['modalities']['object_detections'][start:end+1]
 
 
+            last_valid_gaze = None  # Initialize outside your loop
 
             # Resize images and normalize gaze coordinates
             for f, g, h, o, i in zip(frames_segment, gaze_segment, hand_landmarks_segment, object_detections_segment, imu_segment):
@@ -259,21 +265,46 @@ class EgoDriveAriaDataset():
                 # Process IMU data
                 imu_processed.append(i)
 
-                # Normalize gaze coordinates
                 if g is not None and len(g) > 0:
                     projs = []
                     for gaze_point in g:
                         if gaze_point is not None and 'projection' in gaze_point:
                             projs.append(gaze_point['projection'])
-                    if projs:
-                        mean_g = np.mean(projs, axis=0)
-                        mean_g = mean_g * (224 / 512)  # Assuming original image size is 1920x1080
-                        norm_gx, norm_gy = mean_g[0] / 224, mean_g[1] / 224
-                        gaze_processed.append([norm_gx, norm_gy])
+
+                    if len(projs) == 2:
+                        projs = [proj for proj in projs if np.shape(proj) == (2,)]
+                        if len(projs) >= 1:
+                            mean_g = np.mean(projs, axis=0)
+                            if mean_g.shape == (2,):
+                                mean_g = mean_g * (224 / 512)
+                                norm_gx, norm_gy = mean_g[0] / 224, mean_g[1] / 224
+                                last_valid_gaze = [norm_gx, norm_gy]
+                                gaze_processed.append(last_valid_gaze)
+                            else:
+                                print(f"[DEBUG] mean_g has unexpected shape: {mean_g.shape}, mean_g: {mean_g}")
+                                gaze_processed.append(last_valid_gaze)
+                        else:
+                            print(f"[DEBUG] All projections filtered out due to shape issues. Original projs: {projs}")
+                            gaze_processed.append(last_valid_gaze)
+
+                    elif len(projs) == 1:
+                        p = projs[0]
+                        p = np.array(p)
+                        if p.shape == (2,):
+                            p = p * (224 / 512)
+                            norm_gx, norm_gy = p[0] / 224, p[1] / 224
+                            last_valid_gaze = [norm_gx, norm_gy]
+                            gaze_processed.append(last_valid_gaze)
+                        else:
+                            print(f"[DEBUG] Single proj has unexpected shape: {p.shape}, p: {p}")
+                            gaze_processed.append(last_valid_gaze)
                     else:
-                        gaze_processed.append([None, None])
+                        print(f"[DEBUG] No valid projections found in g: {g}")
+                        gaze_processed.append(last_valid_gaze)
                 else:
-                    gaze_processed.append([None, None])
+                    print(f"[DEBUG] g is None or empty: {g}")
+                    gaze_processed.append(last_valid_gaze)
+
 
                 
 
