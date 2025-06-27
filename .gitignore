@@ -14,3 +14,7 @@ notebooks_and_scripts/best_swin_video_model.pth
 notebooks_and_scripts/dataset/scripts/GazeProcessor.py
 __pycache__
 .gitignore
+ReadingInTheWild_download_urls.json
+notebooks_and_scripts/dataset/scripts/__pycache__
+notebooks_and_scripts/dataset/__pycache__
+notebooks_and_scripts/__pycache__

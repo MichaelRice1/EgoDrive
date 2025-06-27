@@ -1,5 +1,4 @@
-
-
+import math
 import os
 import numpy as np
 from PIL import Image
@@ -1046,16 +1045,20 @@ class VRSDataExtractor():
         '''
         Get automotive object detection results from the VRS file
         '''
+
+        
         classes = {
             0: 'Gear Stick',
-            1: 'Left Wing Mirror',
-            2: 'Mobile Phone',
-            3: 'Rearview Mirror',
-            4: 'Right Wing Mirror',
-            5: 'Steering Wheel'
+            1: 'Infotainment Unit',
+            2: 'Left Wing Mirror',
+            3: 'Mobile Phone',
+            4: 'Rearview Mirror',
+            5: 'Right Wing Mirror',
+            6: 'Speedometer',
+            7: 'Steering Wheel'
         }
         
-        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/datasetv2_yolov11/weights/best.pt'
+        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/yolov11-v3/weights/best.pt'
         model = YOLO(model_weight_path)
         results = []
         device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
@@ -1077,11 +1080,11 @@ class VRSDataExtractor():
                             'bounding_box': result[0].boxes.xyxy[j]
                         })
                         
-                        if result[0].boxes.cls[j] == 5:
-                            rand = random.random()
-                            if rand < 0.05:
-                                rgb = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                                cv2.imwrite(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/incabin_object_detection_datasets/extracted_sw_images_2/{i}.jpg', rgb)
+                        
+                        rand = random.random()
+                        if rand < 0.01:
+                            rgb = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                            cv2.imwrite(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/incabin_object_detection_datasets/phone_stand_images/{i}.jpg', rgb)
 
             results.append(image_dets)
 
@@ -1139,10 +1142,12 @@ class VRSDataExtractor():
             "Mobile Phone": []
         }
 
-        mirror_counters = {
+        action_counters = {
             "Left Wing Mirror": 0,
             "Right Wing Mirror": 0,
-            "Rearview Mirror": 0
+            "Rearview Mirror": 0,
+            "Mobile Phone": 0,
+            "Cross Steering": 0
         }
 
         direction = "Forward"
@@ -1150,11 +1155,38 @@ class VRSDataExtractor():
         if gaze_predictions is not None:
             smoothed_gaze = gaze_predictions
 
+        crossover_frame_count = 0
+        hands_on_wheel = 0
+        gear_change_frame_counter = 0
+        gear_change_action_counter = 0
+        threshold_frames = 10
+        one_handed_driving_counter= 0
+        bad_steering_counter = 0
+        infotainment_distraction_counter = 0
+        speedometer_checks = 0
+
+        fixations = []
+
         for i, (frame, sg, od, hlm) in enumerate(zip(frames, smoothed_gaze, object_dets, hand_lm)):
             
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             if gaze_predictions is None:
                 sg = int(sg[0] * (512 / 1408)), int(sg[1] * (512 / 1408))
+
+            if i == 0:
+                prev_gaze = sg
+                gaze_fixation_duration = 0
+            else:
+                prev_gaze = smoothed_gaze[i - 1]
+                if sg is not None and prev_gaze is not None:
+                    distance = math.hypot(sg[0] - prev_gaze[0], sg[1] - prev_gaze[1])
+                    if distance < 30:  # Threshold for fixation
+                        gaze_fixation_duration += 1
+                    else:
+                        fixations.append(gaze_fixation_duration)
+                        gaze_fixation_duration = 0
+
+
 
             overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=4, threshold=0.1)
             gaussian_area = (xmax - xmin) * (ymax - ymin)
@@ -1171,6 +1203,70 @@ class VRSDataExtractor():
 
             left_landmarks = hlm['left_landmarks']
             right_landmarks = hlm['right_landmarks']
+
+            left_wrist = hlm['left_wrist'] if 'left_wrist' in hlm else None
+            left_palm = hlm['left_palm'] if 'left_palm' in hlm else None
+            right_wrist = hlm['right_wrist'] if 'right_wrist' in hlm else None
+            right_palm = hlm['right_palm'] if 'right_palm' in hlm else None
+
+
+            if all(x is not None for x in [left_wrist, left_palm, right_wrist, right_palm]):
+                for b in od:
+                    if b['class'] == 'Steering Wheel':
+                        x1, y1, x2, y2 = b['bounding_box']
+                        wheel_center = ((x1 + x2) / 2, (y1 + y2) / 2)
+
+                        left_dist = min(
+                            math.hypot(wheel_center[0] - left_wrist[0], wheel_center[1] - left_wrist[1]),
+                            math.hypot(wheel_center[0] - left_palm[0], wheel_center[1] - left_palm[1])
+                        )
+                        right_dist = min(
+                            math.hypot(wheel_center[0] - right_wrist[0], wheel_center[1] - right_wrist[1]),
+                            math.hypot(wheel_center[0] - right_palm[0], wheel_center[1] - right_palm[1])
+                        )
+
+                        if left_dist < 80 and right_dist < 80:  # Adjust threshold as needed
+                            hands_on_wheel += 1
+
+                        cv2.putText(overlay, f"Hands on Wheel: {hands_on_wheel}", (25, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                                    
+
+                        
+            if (right_wrist is not None and right_palm is not None) and (left_wrist is None and left_palm is None):
+                gear_change_frame_counter += 1
+
+            if (left_wrist is not None and left_palm is not None) and gear_change_frame_counter >= 0:
+                if gear_change_frame_counter >= 1 and gear_change_frame_counter < 30:
+                    gear_change_frame_counter = 0  
+                    gear_change_action_counter += 1
+                    cv2.putText(overlay, "Potential Gear Change Occurred", (25, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+
+            if ((right_wrist is not None and right_palm is not None) and (left_wrist is None and left_palm is None)) or ((left_wrist is not None and left_palm is not None) and (right_wrist is None and right_palm is None)):
+                one_handed_driving_counter += 1
+                cv2.putText(overlay, "Potential One-Handed Driving Detected", (25, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+            # bad steering detection
+
+
+            if right_palm is not None and left_palm is not None:
+                rightpalm_x = right_palm[0]
+                leftpalm_x = left_palm[0]
+
+                if rightpalm_x is not None and leftpalm_x is not None:
+                    crossover = (rightpalm_x - leftpalm_x) < 0
+
+                    # Add to a moving window or debounce using a frame counter
+                    if crossover:
+                        crossover_frame_count += 1
+                    else:
+                        crossover_frame_count = 0
+
+                    if crossover_frame_count > threshold_frames:
+                        bad_steering_counter += 1
+                        crossover_frame_count = 0  # reset or keep counting if continuous
+                    cv2.putText(overlay, f"Potential Hand Crossover Detected ", (25, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
             
             scale = 512 / 1408
             image_width = 512
@@ -1210,46 +1306,62 @@ class VRSDataExtractor():
             
             cv2.putText(overlay, f"Head Direction: {direction}", (25, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-
-            gaze_on_mirror = {key: False for key in mirror_counters}
-
             for b in od:
-                x1, y1, x2, y2 = b['bounding_box']
-                bbox_area = (x2 - x1) * (y2 - y1)
-                label = b['class']
+                if b['class'] == 'Infotainment Unit':
+                    x1, y1, x2, y2 = b['bounding_box']
+                    gx, gy = sg[0], sg[1]
+                    if x1 <= gx <= x2 and y1 <= gy <= y2:
+                        infotainment_distraction_counter += 1
+                        cv2.putText(overlay, "Infotainment Distraction Detected", (25, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                        
+                
+                if b['class'] == 'Speedometer':
+                    x1, y1, x2, y2 = b['bounding_box']
+                    gx, gy = sg[0], sg[1]
+                    if (x1 <= gx <= x2 and y1 <= gy <= y2) and s == False:
+                        s = True
+                        speedometer_checks += 1
+                        cv2.putText(overlay, "Speedometer Check Detected", (25, 175), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    else:
+                        s = False
+                    
+            # for b in od:
+            #     x1, y1, x2, y2 = b['bounding_box']
+            #     bbox_area = (x2 - x1) * (y2 - y1)
+            #     label = b['class']
 
-                if "Phone" in label:
-                    action_tracking[label].append(i)
-                    cv2.putText(overlay, f"Mobile Phone In Use", (25, 75),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            #     # if "Phone" in label:
+            #     #     action_tracking[label].append(i)
+            #     #     cv2.putText(overlay, f"Mobile Phone In Use", (25, 75),
+            #     #                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
 
 
-                if "Mirror" in label:
-                    width, height = x2 - x1, y2 - y1
-                    x1 = x1.clone() - (0.3 * width)
-                    x2 = x2.clone() + (0.3 * width)
-                    y1 = y1.clone() - (0.3 * height)
-                    y2 = y2.clone() + (0.3 * height)
+            #     if "Mirror" in label:
+            #         width, height = x2 - x1, y2 - y1
+            #         x1 = x1.clone() - (0.3 * width)
+            #         x2 = x2.clone() + (0.3 * width)
+            #         y1 = y1.clone() - (0.3 * height)
+            #         y2 = y2.clone() + (0.3 * height)
 
-                    intersection_area = max(0, min(x2, xmax) - max(x1, xmin)) * max(0, min(y2, ymax) - max(y1, ymin))
-                    union_area = bbox_area + gaussian_area - intersection_area
-                    IoU = intersection_area / union_area if union_area > 0 else 0
+            #         intersection_area = max(0, min(x2, xmax) - max(x1, xmin)) * max(0, min(y2, ymax) - max(y1, ymin))
+            #         union_area = bbox_area + gaussian_area - intersection_area
+            #         IoU = intersection_area / union_area if union_area > 0 else 0
 
-                    if IoU > 0.25:
-                        gaze_on_mirror[label] = True
+            #         if IoU > 0.25:
+            #             gaze_on_mirror[label] = True
 
-            for mirror in mirror_counters:
-                if gaze_on_mirror[mirror]:
-                    mirror_counters[mirror] += 1
-                else:
-                    mirror_counters[mirror] = 0
+            # for mirror in mirror_counters:
+            #     if gaze_on_mirror[mirror]:
+            #         mirror_counters[mirror] += 1
+            #     else:
+            #         mirror_counters[mirror] = 0
 
-                if mirror_counters[mirror] >= consecutive_frames_threshold:
-                    if i not in action_tracking[mirror]:
-                        action_tracking[mirror].append(i)
+            #     if mirror_counters[mirror] >= consecutive_frames_threshold:
+            #         if i not in action_tracking[mirror]:
+            #             action_tracking[mirror].append(i)
 
-                    cv2.putText(overlay, f"{mirror} Check Detected", (25, 50 + 30 * list(mirror_counters.keys()).index(mirror)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            #         cv2.putText(overlay, f"{mirror} Check Detected", (25, 50 + 30 * list(mirror_counters.keys()).index(mirror)),
+            #                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
 
 
@@ -1271,7 +1383,15 @@ class VRSDataExtractor():
             video_writer.write(overlay)
 
         video_writer.release()
-        
+
+        mean_gaze_fixation_duration = np.mean(fixations) if fixations else 0
+        self.result['mean_gaze_fixation_duration'] = mean_gaze_fixation_duration
+        self.result['one_handed_percent'] = round((one_handed_driving_counter - gear_change_frame_counter) / (len(hand_lm)) * 100 , 4)
+        self.result['crossover_percent'] = round(bad_steering_counter / (len(hand_lm)) * 100, 4)
+        self.result['infotainment_distraction_percent'] = round(infotainment_distraction_counter / (len(hand_lm)) * 100, 4)
+        self.result['speedometer_checks'] = speedometer_checks
+
+
         self.result['video_path'] = video_save_path
         self.result['overlays'] = overlays
         self.result['action_tracking'] = action_tracking

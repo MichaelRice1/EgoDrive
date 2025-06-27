@@ -29,17 +29,30 @@ class EgoDriveAriaDataset():
             len = end_frame - start_frame + 1
             rem = self.frames_per_clip - len
 
-            start_frame = max(0, start_frame - rem // 2)
-            end_frame = min((start_frame + self.frames_per_clip - 1 ), len_frames - 1)
+            if rem < 0:
+                num_clips = len // self.frames_per_clip
+                for i in range(num_clips):
+                    clip_start = start_frame + i * self.frames_per_clip
+                    clip_end = clip_start + self.frames_per_clip - 1
+                    if clip_end >= len_frames:
+                        break
+                    expanded = pd.concat([expanded, pd.DataFrame([{
+                        'start_frame': clip_start,
+                        'end_frame': clip_end,
+                        'action': action
+                    }])], ignore_index=True)
+            else:
+                start_frame = max(0, start_frame - rem // 2)
+                end_frame = min((start_frame + self.frames_per_clip - 1 ), len_frames - 1)
 
-            if end_frame - start_frame + 1 < self.frames_per_clip:
-                continue
-            
-            expanded = pd.concat([expanded, pd.DataFrame([{
-                'start_frame': start_frame,
-                'end_frame': end_frame,
-                'action': action
-            }])], ignore_index=True)
+                if end_frame - start_frame + 1 < self.frames_per_clip:
+                    continue
+                
+                expanded = pd.concat([expanded, pd.DataFrame([{
+                    'start_frame': start_frame,
+                    'end_frame': end_frame,
+                    'action': action
+                }])], ignore_index=True)
             
 
         expanded['start_frame'] = expanded['start_frame'].astype(int)
@@ -125,7 +138,7 @@ class EgoDriveAriaDataset():
 
             hands_f = gaze_f.copy()
             for i in range(0, len(h), 2):
-                if h[i] is not None and h[i + 1] is not None:
+                if h[i] is not np.nan and h[i + 1] is not np.nan:
                     hands_f = cv2.circle(hands_f,
                                         (int(h[i] * 224), int(h[i + 1] * 224)),
                                         radius=5, color=(0, 255, 0), thickness=-1)
@@ -160,8 +173,8 @@ class EgoDriveAriaDataset():
         Features per object: [presence, x, y, width, height, gaze_intersects, gaze_distance]
         """
         target_objects = ['Right Wing Mirror', 'Left Wing Mirror', 'Rearview Mirror', 
-                        'Steering Wheel', 'Mobile Phone', 'Gear Stick']
-        features = np.zeros(36)  # 6 objects × 7 features each
+                        'Mobile Phone']
+        features = np.zeros(24)  # 6 objects × 7 features each
         
         if gaze_point is not None and len(gaze_point) >= 2:
             gx, gy = gaze_point[0], gaze_point[1]
@@ -231,6 +244,15 @@ class EgoDriveAriaDataset():
 
         expanded_annotations = self.processed_annotations(num_frames, annotations)
         samples = []
+
+        label_map = {
+            'Right Wing Mirror Check': 1,
+            'Left Wing Mirror Check': 2,
+            'Rearview Mirror Check': 3,
+            'Mobile Phone Usage': 4,
+            'Driving': 5,
+            'Idle': 6
+        }
 
         for start, end, action in zip(expanded_annotations['start_frame'], 
                                     expanded_annotations['end_frame'], 
@@ -316,7 +338,7 @@ class EgoDriveAriaDataset():
                     norm_lpx, norm_lpy = round(left_palm_normal[0] / 224, 4), round(left_palm_normal[1] / 224, 4)
                     hands.append([norm_lpx, norm_lpy])
                 else:
-                    hands.append([None, None])
+                    hands.append([np.nan, np.nan])
                 
                 if 'left_wrist' in h and h['left_wrist'] is not None:
                     left_wrist_normal = (h['left_wrist'][0], h['left_wrist'][1])
@@ -324,7 +346,7 @@ class EgoDriveAriaDataset():
                     norm_lwx, norm_lwy = round(left_wrist_normal[0] / 224, 4), round(left_wrist_normal[1] / 224, 4)
                     hands.append([norm_lwx, norm_lwy])
                 else:
-                    hands.append([None, None])
+                    hands.append([np.nan, np.nan])
 
                 
                 # Process right palm
@@ -334,7 +356,7 @@ class EgoDriveAriaDataset():
                     norm_rpx, norm_rpy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
                     hands.append([norm_rpx, norm_rpy])
                 else:
-                    hands.append([None, None])
+                    hands.append([np.nan, np.nan])
                             
                 # Process right wrist
                 if 'right_wrist' in h and h['right_wrist'] is not None:
@@ -343,7 +365,7 @@ class EgoDriveAriaDataset():
                     norm_rwx, norm_rwy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
                     hands.append([norm_rwx, norm_rwy])
                 else:
-                    hands.append([None, None])
+                    hands.append([np.nan, np.nan])
                 
                 hands = np.array(hands, dtype=object).flatten().tolist()  # Flatten the list to match expected format
                 hands_processed.append(hands)
@@ -357,7 +379,9 @@ class EgoDriveAriaDataset():
                     'gaze': gaze_processed,
                     'imu': imu_processed,
                     'hands': hands_processed,
-                    'object_detections': object_detections_processed}
+                    'object_detections': object_detections_processed,
+                    'label': action,
+                    'label_id': label_map.get(action, 0)} # Default to 0 if action not found}
             
             samples.append(sample)
             
@@ -376,7 +400,6 @@ class EgoDriveAriaDataset():
             self.evaluate_data_point(sample, video_name)
             np.save(os.path.join(video_name, 'data.npy'), sample)
         
-
     def write_drive(self):
 
         self.process_folder(self.data, self.annotations_path)

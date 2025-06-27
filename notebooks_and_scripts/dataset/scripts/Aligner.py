@@ -158,7 +158,7 @@ class EgoDriveAriaAligner:
 
                     frame_samples = np.stack([f(window_times_s) for f in interpolators], axis=1)
                     aligned_data.append(frame_samples)
-                    time_diffs.append(0)  # No time diff for windowed approach
+                    time_diffs.append(0)  
 
                 return np.array(aligned_data), time_diffs
 
@@ -221,130 +221,6 @@ class EgoDriveAriaAligner:
                     time_diffs.append(float('inf'))
 
             return aligned_data, time_diffs
-    
-    def get_window(self, start_frame: int, end_frame: int) -> Dict[str, List[Any]]:
-        """
-        Extract a window of aligned data for training.
-        
-        Args:
-            start_frame: Starting frame index (inclusive)
-            end_frame: Ending frame index (exclusive)
-            
-        Returns:
-            Dictionary with modality data for the specified frame window
-        """
-        if self.aligned_data is None:
-            raise ValueError("No aligned data. Run align() first.")
-        
-        if start_frame < 0 or end_frame > self.aligned_data['frame_count']:
-            raise ValueError(f"Frame range [{start_frame}:{end_frame}] out of bounds "
-                           f"[0:{self.aligned_data['frame_count']}]")
-        
-        window_data = {}
-        
-        for mod_name, mod_data in self.aligned_data['modalities'].items():
-            window_data[mod_name] = mod_data[start_frame:end_frame]
-        
-        # Add frame metadata
-        window_data['frame_indices'] = list(range(start_frame, end_frame))
-        window_data['frame_timestamps'] = self.frame_timestamps[start_frame:end_frame].tolist()
-        window_data['window_duration'] = (
-            self.frame_timestamps[end_frame-1] - self.frame_timestamps[start_frame]
-        )
-        
-        return window_data
-    
-    def get_training_windows(self, window_size: int, stride: int = 1, 
-                           min_valid_ratio: float = 0.8) -> List[Dict[str, List[Any]]]:
-        """
-        Generate sliding windows for training.
-        
-        Args:
-            window_size: Number of frames per window
-            stride: Frame stride between windows
-            min_valid_ratio: Minimum ratio of non-None data required per window
-            
-        Returns:
-            List of window dictionaries ready for training
-        """
-        if self.aligned_data is None:
-            raise ValueError("No aligned data. Run align() first.")
-        
-        windows = []
-        frame_count = self.aligned_data['frame_count']
-        
-        for start_frame in range(0, frame_count - window_size + 1, stride):
-            end_frame = start_frame + window_size
-            window = self.get_window(start_frame, end_frame)
-            
-            # Check data quality
-            if self._is_window_valid(window, min_valid_ratio):
-                windows.append(window)
-        
-        print(f"Generated {len(windows)} training windows "
-              f"(size={window_size}, stride={stride})")
-        
-        return windows
-    
-    def _is_window_valid(self, window: Dict[str, List[Any]], 
-                        min_valid_ratio: float) -> bool:
-        """Check if window has sufficient valid data"""
-        for mod_name, mod_data in window.items():
-            if mod_name in ['frame_indices', 'frame_timestamps', 'window_duration']:
-                continue
-                
-            valid_count = sum(1 for x in mod_data if x is not None)
-            if valid_count / len(mod_data) < min_valid_ratio:
-                return False
-        
-        return True
-    
-    def export_for_training(self, output_format: str = 'numpy') -> Dict[str, Any]:
-        """
-        Export aligned data in training-ready format.
-        
-        Args:
-            output_format: 'numpy' or 'list'
-        """
-        if self.aligned_data is None:
-            raise ValueError("No aligned data. Run align() first.")
-        
-        if output_format == 'numpy':
-            # Convert to numpy arrays where possible
-            export_data = {}
-            for mod_name, mod_data in self.aligned_data['modalities'].items():
-                try:
-                    # Try to convert to numpy array
-                    # Handle None values by masking
-                    valid_indices = [i for i, x in enumerate(mod_data) if x is not None]
-                    if valid_indices:
-                        valid_data = [mod_data[i] for i in valid_indices]
-                        if isinstance(valid_data[0], (int, float)):
-                            # Scalar data
-                            arr = np.full(len(mod_data), np.nan)
-                            arr[valid_indices] = valid_data
-                            export_data[mod_name] = arr
-                        elif isinstance(valid_data[0], (list, tuple, np.ndarray)):
-                            # Vector data
-                            sample_shape = np.array(valid_data[0]).shape
-                            arr = np.full((len(mod_data),) + sample_shape, np.nan)
-                            for i, idx in enumerate(valid_indices):
-                                arr[idx] = valid_data[i]
-                            export_data[mod_name] = arr
-                        else:
-                            # Non-numeric data, keep as list
-                            export_data[mod_name] = mod_data
-                    else:
-                        export_data[mod_name] = mod_data
-                except:
-                    # Fall back to list format
-                    export_data[mod_name] = mod_data
-            
-            export_data['frame_timestamps'] = self.frame_timestamps
-            return export_data
-        
-        else:  # list format
-            return self.aligned_data['modalities']
     
     def print_summary(self):
         """Print alignment summary"""

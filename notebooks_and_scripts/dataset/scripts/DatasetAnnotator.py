@@ -29,10 +29,8 @@ class DatasetAnnotator:
         personalized_gaze_path = os.path.join(full_path, f'mps_{name}_vrs', 'eye_gaze', 'personalized_eye_gaze.csv')
 
         if os.path.exists(gaze_path) and os.path.exists(personalized_gaze_path):
-            print('hi1')
             vde.get_gaze_data(gaze_path, personalized_gaze_path)
         elif os.path.exists(gaze_path):
-            print('hi2')
             vde.get_gaze_data(gaze_path, None)
         else:
             print(f"Gaze data not found at: {gaze_path}. Skipping gaze data processing.")
@@ -51,4 +49,4 @@ class DatasetAnnotator:
 if __name__ == "__main__":
     base_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive'
     annotator = DatasetAnnotator(base_path)
-    annotator.process_folder('Drive5')
+    annotator.process_folder('Drive1_8')
