@@ -683,10 +683,7 @@ class VRSDataExtractor():
                             imu_right_point.accel_msec2[2],
                             imu_right_point.gyro_radsec[0],
                             imu_right_point.gyro_radsec[1],
-                            imu_right_point.gyro_radsec[2],
-                            imu_right_point.mag_tesla[0],
-                            imu_right_point.mag_tesla[1],
-                            imu_right_point.mag_tesla[2]]
+                            imu_right_point.gyro_radsec[2]]
 
             if ind < num_data_imu_left:
                 imu_left_point = self.provider.get_imu_data_by_index(self.stream_mappings['imu-left'], ind)
@@ -695,10 +692,7 @@ class VRSDataExtractor():
                             imu_left_point.accel_msec2[2],
                             imu_left_point.gyro_radsec[0],
                             imu_left_point.gyro_radsec[1],
-                            imu_left_point.gyro_radsec[2],
-                            imu_left_point.mag_tesla[0],
-                            imu_left_point.mag_tesla[1],
-                            imu_left_point.mag_tesla[2]]
+                            imu_left_point.gyro_radsec[2]]
                              
 
                 imu_left[imu_left_ts[ind]] = left_data
@@ -1058,7 +1052,7 @@ class VRSDataExtractor():
             7: 'Steering Wheel'
         }
         
-        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/runs/detect/yolov11-v3/weights/best.pt'
+        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/utilities/InCabinObjectDet.pt'
         model = YOLO(model_weight_path)
         results = []
         device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")

@@ -51,7 +51,7 @@ class Writer:
 
 if __name__ == "__main__":
     folder_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive'
-    written_folders = ['Drive1_2','Drive1_3','Drive1_4','Drive1_5','Drive1_6','Drive1_7', 'Drive1', 'Drive6', 'Drive9']
+    written_folders = []
     writer = Writer(folder_path)
     writer.write(folder_path, written_folders)
 

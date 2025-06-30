@@ -246,12 +246,12 @@ class EgoDriveAriaDataset():
         samples = []
 
         label_map = {
-            'Right Wing Mirror Check': 1,
-            'Left Wing Mirror Check': 2,
-            'Rearview Mirror Check': 3,
-            'Mobile Phone Usage': 4,
-            'Driving': 5,
-            'Idle': 6
+            'checking left wing mirror': 0,
+            'checking rear view mirror': 1,
+            'checking right wing mirror': 2,
+            'driving': 3,
+            'idle': 4,
+            'mobile phone usage': 5
         }
 
         for start, end, action in zip(expanded_annotations['start_frame'], 
@@ -285,6 +285,7 @@ class EgoDriveAriaDataset():
                 frames_processed.append(img_rs)
 
                 # Process IMU data
+                    
                 imu_processed.append(i)
 
                 if g is not None and len(g) > 0:
@@ -332,14 +333,6 @@ class EgoDriveAriaDataset():
 
                 hands = []
                 # Process left palm
-                if 'left_palm' in h and h['left_palm'] is not None:
-                    left_palm_normal = (h['left_palm'][0], h['left_palm'][1])
-                    left_palm_normal = np.array(left_palm_normal) * (224 / 512)
-                    norm_lpx, norm_lpy = round(left_palm_normal[0] / 224, 4), round(left_palm_normal[1] / 224, 4)
-                    hands.append([norm_lpx, norm_lpy])
-                else:
-                    hands.append([np.nan, np.nan])
-                
                 if 'left_wrist' in h and h['left_wrist'] is not None:
                     left_wrist_normal = (h['left_wrist'][0], h['left_wrist'][1])
                     left_wrist_normal = np.array(left_wrist_normal) * (224 / 512)
@@ -348,6 +341,22 @@ class EgoDriveAriaDataset():
                 else:
                     hands.append([np.nan, np.nan])
 
+                if 'left_palm' in h and h['left_palm'] is not None:
+                    left_palm_normal = (h['left_palm'][0], h['left_palm'][1])
+                    left_palm_normal = np.array(left_palm_normal) * (224 / 512)
+                    norm_lpx, norm_lpy = round(left_palm_normal[0] / 224, 4), round(left_palm_normal[1] / 224, 4)
+                    hands.append([norm_lpx, norm_lpy])
+                else:
+                    hands.append([np.nan, np.nan])
+                
+                
+                if 'right_wrist' in h and h['right_wrist'] is not None:
+                    right_palm_normal = (h['right_wrist'][0], h['right_wrist'][1])
+                    right_palm_normal = np.array(right_palm_normal) * (224 / 512)
+                    norm_rwx, norm_rwy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
+                    hands.append([norm_rwx, norm_rwy])
+                else:
+                    hands.append([np.nan, np.nan])
                 
                 # Process right palm
                 if 'right_palm' in h and h['right_palm'] is not None:
@@ -359,13 +368,7 @@ class EgoDriveAriaDataset():
                     hands.append([np.nan, np.nan])
                             
                 # Process right wrist
-                if 'right_wrist' in h and h['right_wrist'] is not None:
-                    right_palm_normal = (h['right_wrist'][0], h['right_wrist'][1])
-                    right_palm_normal = np.array(right_palm_normal) * (224 / 512)
-                    norm_rwx, norm_rwy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
-                    hands.append([norm_rwx, norm_rwy])
-                else:
-                    hands.append([np.nan, np.nan])
+                
                 
                 hands = np.array(hands, dtype=object).flatten().tolist()  # Flatten the list to match expected format
                 hands_processed.append(hands)
