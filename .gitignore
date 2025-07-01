@@ -18,3 +18,5 @@ ReadingInTheWild_download_urls.json
 notebooks_and_scripts/dataset/scripts/__pycache__
 notebooks_and_scripts/dataset/__pycache__
 notebooks_and_scripts/__pycache__
+notebooks_and_scripts/wandb
+notebooks_and_scripts/checkpoints
