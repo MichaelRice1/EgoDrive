@@ -47,6 +47,6 @@ class DatasetAnnotator:
 
 
 if __name__ == "__main__":
-    base_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive'
+    base_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/idle_vids'
     annotator = DatasetAnnotator(base_path)
-    annotator.process_folder('Drive1_8')
+    annotator.process_folder('Drive1_11')

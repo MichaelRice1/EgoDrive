@@ -20,3 +20,4 @@ notebooks_and_scripts/dataset/__pycache__
 notebooks_and_scripts/__pycache__
 notebooks_and_scripts/wandb
 notebooks_and_scripts/checkpoints
+notebooks_and_scripts/test_results

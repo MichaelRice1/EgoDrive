@@ -14,9 +14,6 @@ class EgoDriveAriaDataset():
         self.image_size = image_size
         self.frames_per_clip = frames_per_clip
         self.annotations_path = annotations_path
-        self.last_valid_gaze = [0.5, 0.5]  
-
-    
 
 
     def processed_annotations(self, len_frames ,annotations):
@@ -123,7 +120,7 @@ class EgoDriveAriaDataset():
         output_video_path = f'{save_path}/annotated_video.mp4'
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         fps = 15  # Frames per second
-        frame_size = (224, 224)
+        frame_size = (self.image_size, self.image_size)
 
         video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, frame_size)
 
@@ -133,23 +130,23 @@ class EgoDriveAriaDataset():
             gaze_x, gaze_y = g
 
             gaze_f = cv2.circle(rgb.copy(),
-                                (int(gaze_x * 224), int(gaze_y * 224)),
+                                (int(gaze_x * self.image_size), int(gaze_y * self.image_size)),
                                 radius=5, color=(255, 0, 0), thickness=-1)
 
             hands_f = gaze_f.copy()
             for i in range(0, len(h), 2):
                 if h[i] is not np.nan and h[i + 1] is not np.nan:
                     hands_f = cv2.circle(hands_f,
-                                        (int(h[i] * 224), int(h[i + 1] * 224)),
+                                        (int(h[i] * self.image_size), int(h[i + 1] * self.image_size)),
                                         radius=5, color=(0, 255, 0), thickness=-1)
 
 
             for i in range(0, len(o), 6):
                 if o[i] != 0:
-                    x = int(o[i+1] * 224)
-                    y = int(o[i + 2] * 224)
-                    width = int(o[i + 3] * 224)
-                    height = int(o[i + 4] * 224)
+                    x = int(o[i+1] * self.image_size)
+                    y = int(o[i + 2] * self.image_size)
+                    width = int(o[i + 3] * self.image_size)
+                    height = int(o[i + 4] * self.image_size)
 
                     # Draw bounding box
                     cv2.rectangle(hands_f,
@@ -299,8 +296,8 @@ class EgoDriveAriaDataset():
                         if len(projs) >= 1:
                             mean_g = np.mean(projs, axis=0)
                             if mean_g.shape == (2,):
-                                mean_g = mean_g * (224 / 512)
-                                norm_gx, norm_gy = mean_g[0] / 224, mean_g[1] / 224
+                                mean_g = mean_g * (self.image_size / 512)
+                                norm_gx, norm_gy = mean_g[0] / self.image_size, mean_g[1] / self.image_size
                                 last_valid_gaze = [norm_gx, norm_gy]
                                 gaze_processed.append(last_valid_gaze)
                             else:
@@ -314,8 +311,8 @@ class EgoDriveAriaDataset():
                         p = projs[0]
                         p = np.array(p)
                         if p.shape == (2,):
-                            p = p * (224 / 512)
-                            norm_gx, norm_gy = p[0] / 224, p[1] / 224
+                            p = p * (self.image_size / 512)
+                            norm_gx, norm_gy = p[0] / self.image_size, p[1] / self.image_size
                             last_valid_gaze = [norm_gx, norm_gy]
                             gaze_processed.append(last_valid_gaze)
                         else:
@@ -335,16 +332,16 @@ class EgoDriveAriaDataset():
                 # Process left palm
                 if 'left_wrist' in h and h['left_wrist'] is not None:
                     left_wrist_normal = (h['left_wrist'][0], h['left_wrist'][1])
-                    left_wrist_normal = np.array(left_wrist_normal) * (224 / 512)
-                    norm_lwx, norm_lwy = round(left_wrist_normal[0] / 224, 4), round(left_wrist_normal[1] / 224, 4)
+                    left_wrist_normal = np.array(left_wrist_normal) * (self.image_size / 512)
+                    norm_lwx, norm_lwy = round(left_wrist_normal[0] / self.image_size, 4), round(left_wrist_normal[1] / self.image_size, 4)
                     hands.append([norm_lwx, norm_lwy])
                 else:
                     hands.append([np.nan, np.nan])
 
                 if 'left_palm' in h and h['left_palm'] is not None:
                     left_palm_normal = (h['left_palm'][0], h['left_palm'][1])
-                    left_palm_normal = np.array(left_palm_normal) * (224 / 512)
-                    norm_lpx, norm_lpy = round(left_palm_normal[0] / 224, 4), round(left_palm_normal[1] / 224, 4)
+                    left_palm_normal = np.array(left_palm_normal) * (self.image_size / 512)
+                    norm_lpx, norm_lpy = round(left_palm_normal[0] / self.image_size, 4), round(left_palm_normal[1] / self.image_size, 4)
                     hands.append([norm_lpx, norm_lpy])
                 else:
                     hands.append([np.nan, np.nan])
@@ -352,8 +349,8 @@ class EgoDriveAriaDataset():
                 
                 if 'right_wrist' in h and h['right_wrist'] is not None:
                     right_palm_normal = (h['right_wrist'][0], h['right_wrist'][1])
-                    right_palm_normal = np.array(right_palm_normal) * (224 / 512)
-                    norm_rwx, norm_rwy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
+                    right_palm_normal = np.array(right_palm_normal) * (self.image_size / 512)
+                    norm_rwx, norm_rwy = round(right_palm_normal[0] / self.image_size, 4), round(right_palm_normal[1] / self.image_size, 4)
                     hands.append([norm_rwx, norm_rwy])
                 else:
                     hands.append([np.nan, np.nan])
@@ -361,8 +358,8 @@ class EgoDriveAriaDataset():
                 # Process right palm
                 if 'right_palm' in h and h['right_palm'] is not None:
                     right_palm_normal = (h['right_palm'][0], h['right_palm'][1])
-                    right_palm_normal = np.array(right_palm_normal) * (224 / 512)
-                    norm_rpx, norm_rpy = round(right_palm_normal[0] / 224, 4), round(right_palm_normal[1] / 224, 4)
+                    right_palm_normal = np.array(right_palm_normal) * (self.image_size / 512)
+                    norm_rpx, norm_rpy = round(right_palm_normal[0] / self.image_size, 4), round(right_palm_normal[1] / self.image_size, 4)
                     hands.append([norm_rpx, norm_rpy])
                 else:
                     hands.append([np.nan, np.nan])
@@ -390,7 +387,7 @@ class EgoDriveAriaDataset():
             
             split = annotations_path.split('/')
             video_path = '/'.join(split[:-2])
-            action_path = os.path.join(video_path,'processed', f'{action}')
+            action_path = os.path.join(video_path,f'{self.image_size}', f'{action}')
             video_name = os.path.join(action_path, f'{split[-2]}_{start}_{end}')
 
             

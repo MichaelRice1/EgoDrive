@@ -35,13 +35,14 @@ class Writer:
                 
                 aligner = EgoDriveAriaAligner(data=data, primary_visual_modality='rgb', max_time_gap=5e7)
                 aligned_data = aligner.align_drive()
+                del data
 
                 annotations_path = os.path.join(folder_path, 'actions.csv')
                 dataset_creator = EgoDriveAriaDataset(aligned_data, image_size=224, frames_per_clip=32, annotations_path=annotations_path)
                 dataset_creator.process_folder(aligned_data, annotations_path)
 
                 # Flush data from mem
-                del data
+                
                 del aligned_data
                 del dataset_creator
                 del aligner
@@ -50,7 +51,7 @@ class Writer:
 
 
 if __name__ == "__main__":
-    folder_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive'
+    folder_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/idle_vids'
     written_folders = []
     writer = Writer(folder_path)
     writer.write(folder_path, written_folders)

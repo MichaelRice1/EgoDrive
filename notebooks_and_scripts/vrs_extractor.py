@@ -85,7 +85,6 @@ class VRSDataExtractor():
         self.result = {}
         self.face_ego_blur = "models/ego_blur_face.jit"
         self.lp_ego_blur = "models/ego_blur_lp.jit"
-        self.mp_hand_landmarker_task_path = 'C:/Users/athen/Desktop/Github/MastersThesis/MSc_AI_Thesis/Coding/other/hand_landmarker.task'
         rgblabel = 'camera-rgb'
         self.num_frames_rgb = self.provider.get_num_data(self.provider.get_stream_id_from_label(rgblabel))
 
