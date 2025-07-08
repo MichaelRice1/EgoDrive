@@ -4,7 +4,7 @@ import os
 import sys
 import numpy as np
 sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/')
-from data_processing_main import DataProcessor
+from DataExtractionMain import DataProcessor
 
 class Writer:
     def __init__(self,folder_path):

@@ -6,7 +6,7 @@ from streamlit_autorefresh import st_autorefresh
 import sys
 sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts')
 from vrs_extractor import VRSDataExtractor
-from data_processing_main import DataProcessor
+from dataset_scripts.DataExtractionMain import DataProcessor
 import json
 from llama_cpp import Llama
 

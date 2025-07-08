@@ -27,7 +27,6 @@ from projectaria_tools.core.mps.utils import (
 os.environ['YOLO_VERBOSE'] = 'False'
 
 import sys
-sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/unused/')
 
 
 class VRSDataExtractor():
