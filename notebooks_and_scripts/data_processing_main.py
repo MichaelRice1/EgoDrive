@@ -112,6 +112,6 @@ if __name__ == "__main__":
     dp = DataProcessor()
 
     drive_no = 9
-    dp.vrs_processing(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/Drive{drive_no}/Drive{drive_no}.vrs')
+    dp.vrs_processing(f'data/newdrive/Drive{drive_no}/Drive{drive_no}.vrs')
 
 

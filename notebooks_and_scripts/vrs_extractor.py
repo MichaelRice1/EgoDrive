@@ -41,14 +41,12 @@ class VRSDataExtractor():
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
         
         self.provider.set_devignetting(True)
-        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
+        self.provider.set_devignetting_mask_folder_path('utilities/devignetting_masks_bin')
         
         self.device_calibration = self.provider.get_device_calibration()
         self.rgb_camera_calibration = self.device_calibration.get_camera_calib('camera-rgb')
 
-        
-        # self.provider.set_devignetting(True)
-        # self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/devignetting_masks')
+
 
         self.stream_mappings = {
             "camera-slam-left": StreamId("1201-1"),
@@ -97,22 +95,6 @@ class VRSDataExtractor():
             if not torch.cuda.is_available()
             else f"cuda:{torch.cuda.current_device()}"
         )
-    
-    def crop_largest_square_inside_circle(self, image):
-
-        """
-        Crops the largest square from a circular image centered in a square frame.
-        """
-
-        assert image.shape[0] == image.shape[1], "Image must be square"
-        size = image.shape[0]
-        
-        # Compute side of largest inscribed square
-        side = int(size / np.sqrt(2))
-        
-        # Compute starting point to crop centered
-        offset = (size - side) // 2
-        return image[offset:offset+side, offset:offset+side]
     
     def get_image_data(self, start_index=0, end_index=None, rgb_flag = False, progress_callback=None):
 
@@ -843,12 +825,6 @@ class VRSDataExtractor():
         print(f'Returing {len(frames)} frames with ego-blur applied')
         return frame
     
-    def undistort_gaze(self,point_distorted_px, src_calib, dst_calib):
-
-        ray = src_calib.unproject(point_distorted_px)
-        point_undistorted = dst_calib.project(ray)
-        return point_undistorted
-    
     def annotate(self, frames_dict, actions_csv_path, blur_csv_path, fps=15):
         action_label_map = {
             '1': 'checking right wing mirror',
@@ -1051,7 +1027,7 @@ class VRSDataExtractor():
             7: 'Steering Wheel'
         }
         
-        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/utilities/InCabinObjectDet.pt'
+        model_weight_path = 'utilities/InCabinObjectDet.pt'
         model = YOLO(model_weight_path)
         results = []
         device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
@@ -1074,10 +1050,11 @@ class VRSDataExtractor():
                         })
                         
                         
-                        rand = random.random()
-                        if rand < 0.01:
-                            rgb = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                            cv2.imwrite(f'/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/incabin_object_detection_datasets/phone_stand_images/{i}.jpg', rgb)
+                        # rand = random.random()
+                        # if rand < 0.01:
+                        #     rgb = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                        #     cv2.imwrite(
+                        #         f'data/incabin_object_detection_datasets/phone_stand_images/{i}.jpg', rgb)
 
             results.append(image_dets)
 
