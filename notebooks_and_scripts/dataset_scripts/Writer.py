@@ -3,7 +3,7 @@ from EgoDriveAriaDataset import EgoDriveAriaDataset
 import os
 import sys
 import numpy as np
-sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/')
+sys.path.append('MSc_AI_Thesis/notebooks_and_scripts/')
 from DataExtractionMain import DataProcessor
 
 class Writer:

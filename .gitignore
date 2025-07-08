@@ -28,6 +28,4 @@ notebooks_and_scripts/testing.ipynb
 test_results/all_modalities/1/multimodal_epoch=09_val_acc=0.975.ckpt
 test_results/all_modalities/1/wandb.zip
 notebooks_and_scripts/yolo.ipynb
-notebooks_and_scripts/dashboard/DriverEvaluationTool.sh
-notebooks_and_scripts/dashboard/backend/main.py
-.gitignore
+notebooks_and_scripts/dashboard

@@ -39,14 +39,8 @@ class DatasetAnnotator:
         vde.get_hand_data(hand_path)
         vde.annotate(vde.result['rgb'], actions_csv_path, blur_csv_path)
 
-    # def process_all_folders(self):
-    #     folders = os.listdir(self.base_path)
-    #     folders = [folder for folder in folders if 'Drive' in folder]
-    #     for folder in sorted(folders):
-    #         self.process_folder(folder)
-
 
 if __name__ == "__main__":
-    base_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/idle_vids'
+    base_path = ''
     annotator = DatasetAnnotator(base_path)
-    annotator.process_folder('Drive1_11')
+    annotator.process_folder('')

@@ -243,8 +243,6 @@ class EgoDriveAriaAligner:
         print(f"\nAverage completion: {avg_completion:.1%}")
 
     def align_drive(self):
-    # Create aligner
-        # data = np.load('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/Drive9/Drive9.npy', allow_pickle=True).item()  # Load your data here
         
         aligner = EgoDriveAriaAligner(
             data=self.data,
@@ -300,9 +298,6 @@ class EgoDriveAriaAligner:
         
         # # Align data
         aligned_dataset = aligner.align()
-
-
-        # np.save('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/data/newdrive/Drive9/Drive9_aligned.npy', aligned_dataset, allow_pickle=True)
 
 
         return aligned_dataset
