@@ -3,7 +3,6 @@ import os
 import numpy as np
 from PIL import Image
 import torch
-import random
 import cv2
 import csv
 from time import time
@@ -17,7 +16,6 @@ from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
 from projectaria_tools.core.stream_id import StreamId
 import projectaria_tools.core.mps as mps
 from projectaria_tools.core.mps.utils import (
-    get_nearest_wrist_and_palm_pose,
     get_gaze_vector_reprojection,
     get_nearest_eye_gaze,
     get_nearest_pose,
