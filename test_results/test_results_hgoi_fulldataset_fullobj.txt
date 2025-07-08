@@ -1,0 +1,63 @@
+=== COMPREHENSIVE TEST RESULTS ===
+Timestamp: 20250707_150039
+Total samples: 491
+Test Accuracy: 0.9919
+Test AUC: 0.9999
+Test Precision: 0.9896
+Test Recall: 0.9898
+Test F1 Score: 0.9897
+
+=== DIAGNOSTICS ===
+Unique predictions: [0 1 2 3 4 5]
+Unique targets: [0 1 2 3 4 5]
+Prediction distribution: [ 36  57  38 297  36  27]
+Target distribution: [ 36  57  39 297  35  27]
+
+=== PER-CLASS METRICS ===
+left wing mirror check:
+  Accuracy: 1.0000
+  Precision: 1.0000
+  Recall: 1.0000
+
+rear view mirror check:
+  Accuracy: 1.0000
+  Precision: 1.0000
+  Recall: 1.0000
+
+right wing mirror check:
+  Accuracy: 0.9744
+  Precision: 1.0000
+  Recall: 0.9744
+
+driving:
+  Accuracy: 0.9933
+  Precision: 0.9933
+  Recall: 0.9933
+
+idle:
+  Accuracy: 0.9714
+  Precision: 0.9444
+  Recall: 0.9714
+
+mobile phone usage:
+  Accuracy: 1.0000
+  Precision: 1.0000
+  Recall: 1.0000
+
+=== CONFUSION MATRIX ===
+True\Pred	left wing mirror check	rear view mirror check	right wing mirror check	driving	idle	mobile phone usage
+left wing mirror check	36	0	0	0	0	0
+rear view mirror check	0	57	0	0	0	0
+right wing mirror check	0	0	38	1	0	0
+driving	0	0	0	295	2	0
+idle	0	0	0	1	34	0
+mobile phone usage	0	0	0	0	0	27
+
+=== NORMALIZED CONFUSION MATRIX ===
+True\Pred	left wing mirror check	rear view mirror check	right wing mirror check	driving	idle	mobile phone usage
+left wing mirror check	1.000	0.000	0.000	0.000	0.000	0.000
+rear view mirror check	0.000	1.000	0.000	0.000	0.000	0.000
+right wing mirror check	0.000	0.000	0.974	0.026	0.000	0.000
+driving	0.000	0.000	0.000	0.993	0.007	0.000
+idle	0.000	0.000	0.000	0.029	0.971	0.000
+mobile phone usage	0.000	0.000	0.000	0.000	0.000	1.000

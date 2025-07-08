@@ -19,9 +19,11 @@ notebooks_and_scripts/dataset/__pycache__
 notebooks_and_scripts/__pycache__
 notebooks_and_scripts/wandb
 notebooks_and_scripts/checkpoints
-notebooks_and_scripts/test_results
 notebooks_and_scripts/scripts/__pycache__
 notebooks_and_scripts/unused
+notebooks_and_scripts/DS_Store
+.DS_Store
 .venv
-test_results
 notebooks_and_scripts/testing.ipynb
+test_results/all_modalities/1/multimodal_epoch=09_val_acc=0.975.ckpt
+test_results/all_modalities/1/wandb.zip
