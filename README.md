@@ -1,83 +1,194 @@
-# EgoDrive
+# EgoDrive: An Egocentric, Multimodal Dataset and Methods for Driver Behavior Analysis
 
-<!-- [[📝 Blogpost]]()
-[[📂 Project Page]]()
-[[📊 Data Explorer]]()
-[[📄 Paper]]() [[📚 Bibtex]]() -->
+EgoDrive: Multimodal Driver Behavior Recognition using Project Aria
 
-EgoDrive Aria Dataset - Michael Rice
+## 🚗 Overview
 
-<p align="center">
-  <img src="images_gifs/output3.gif" width="49%" alt="Dataset Modality Visualization" />
-  <img src="images_gifs/output2.gif" width="49%" alt="Sample VRS File Output" />
-</p>
+EgoDrive is the first egocentric, multimodal dataset for driver behavior analysis captured using Meta's Project Aria glasses. This proof-of-concept work demonstrates the technical feasibility of real-time driver behavior recognition through multimodal sensor fusion, combining RGB video, eye gaze tracking, hand pose estimation, IMU data, and semantic object detection.
 
+**Key Features:**
 
-<!-- 
-<p align="center">
-<img src="assets/highlights.png" alt="highlights" width="100%">
-</p> -->
+- 🎥 **138,024 frames** of synchronized multimodal data (2.5 hours)
+- 👁️ **Six behavioral classes**: Driving, Left/Right/Rear Mirror Check, Mobile Phone Usage, Idle
+- ⚡ **Real-time performance**: Sub-3ms inference with 97.4% accuracy
+- 🔬 **Proof-of-concept validation** for multimodal egocentric driver monitoring
+- 🏗️ **Two model variants**: EgoDriveMax (accuracy-focused) and EgoDriveRT (efficiency-focused)
 
-<!-- ## 🔍 Comparison to Existing Datasets
-Compared to existing gocentric video datasets as well as reading datasets, our dataset is the first reading dataset that contains high-frequency eye-gaze, diverse and realistic egocentric videos, and hard negative (HN) samples. 
+## 🔍 Technical Contributions
 
-<p align="center">
-<img src="assets/comparison.png" alt="comparison" width="60%">
-</p>
+### Multimodal Architecture
 
-## 🤖 Reading Recognition Model
+- **Transformer-based fusion** of heterogeneous sensor streams
+- **Modality-specific encoders** for RGB, gaze, hands, IMU, and object detection
+- **Temporal alignment strategies** for synchronized multimodal processing
 
-We have developed a lightweight and flexible model for reading recognition with high precision and recall by utilizing RGB, eye gaze, and head pose data. You can find the reading recognition model in the [[`/models`]](https://github.com/facebookresearch/reading_in_the_wild/tree/main/models) folder. For a comprehensive performance analysis and an overview of the model's capabilities, please refer to our [technical report](https://arxiv.org/abs/2505.24848).
+### Efficiency Breakthrough
+
+- **400x parameter reduction** (42M → 104K parameters)
+- **Minimal accuracy loss** (98.6% → 97.4%)
+- **Real-time inference** (1595ms → 2.65ms on Apple M4)
+
+### Dataset Methodology
+
+- **Synchronized data collection** using Project Aria glasses
+- **Temporal alignment framework** for heterogeneous sensor streams
+- **Annotation protocols** for behavioral class identification
+
+## 🤖 Model Architecture
+
+We developed two variants of our Multimodal Transformer architecture:
+
+| Model       | Blocks | Heads | Feature Dim | RGB | Params | Inference Time | Accuracy |
+| ----------- | ------ | ----- | ----------- | --- | ------ | -------------- | -------- |
+| EgoDriveMax | 2      | 4     | 256         | ✓   | 42M    | 1595ms         | 98.6%    |
+| EgoDriveRT  | 1      | 2     | 32          | ✗   | 104K   | 2.65ms         | 97.4%    |
+
+### Architecture Components:
+
+- **RGB Encoder**: Swin-Tiny + ResNet-18 motion stream
+- **Gaze Encoder**: Linear projection + 1D convolution
+- **Hands Encoder**: Missing value handling + temporal attention
+- **Object Detection Encoder**: YOLO v11 features + temporal modeling
+- **IMU Encoder**: Stacked 1D CNNs + GRU for dynamics
 
 ## 🚀 Getting Started
 
-Run the following commands to create a conda environment `ritw` with this
-repository installed by pip.
+### Prerequisites
+
+```bash
+git clone https://github.com/your-username/egodrive.git
+cd egodrive
+conda create -n egodrive python=3.10
+conda activate egodrive
+pip install -r requirements.txt
+```
+
+**Dependencies**
+
+- PyTorch >= 1.12.0
+- Transformers
+- OpenCV
+- NumPy
+- Project Aria Tools (for data processing)
+
+### 📦 Dataset
+
+**Data Structure** The EgoDrive dataset contains synchronized streams from Project Aria glasses:
 
 ```
-   git clone git@github.com:facebookresearch/reading_in_the_wild.git
-   cd reading_in_the_wild
-   conda create -n ritw python=3.10
-   conda activate ritw
-   pip install -r requirements.txt
+egodrive_dataset/
+├── rgb_videos/          # 15fps RGB camera
+├── gaze_data/           # 30fps eye tracking
+├── hand_poses/          # 3D hand landmarks
+├── imu_data/            # 800Hz-1KHz inertial data
+├── object_detections/   # YOLO v11 in-cabin detection
+└── annotations/         # Behavioral class labels
 ```
 
-## 📦 Download Dataset
+**Behavioral Classes**
 
-The Reading in the Wild dataset contains two distinct subsets, one captured in Columbus and the other captured in Seattle. The Seattle subset focuses on diversity, while the Columbus subset aims to test our model’s ability to generalize in unseen settings, as well as identify edge cases where the model fails. 
+- Driving - Normal forward driving attention
+- Left Mirror Check - Checking left side mirror
+- Right Mirror Check - Checking right side mirror
+- Rear-view Mirror Check - Checking rear-view mirror
+- Mobile Phone Usage - Interacting with mobile device
+- Idle - Stationary/waiting periods
 
-Please refer to each folder for instructions on how to download each subset.
+**Data Characteristics**
 
-### [☕ Seattle Subset](https://github.com/facebookresearch/reading_in_the_wild/tree/main/reading_in_the_wild_seattle)
-The Seattle subset was collected for training, validation, and testing purposes. It focuses on reading and non-reading activities in diverse scenarios, meaning it covers a wide variety of participants, reading modes, written materials, and more. It contains a mix of normal negative (no text present) and hard negative (text present but not being read) examples, as well as mixed sequences that alternate between reading and not reading. These data were collected in homes, office spaces, libraries, and the outdoors. This dataset is owned and distributed by Meta under under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0). 
+- Temporal Resolution: 32-frame sequences (2 seconds)
+- Sampling Rates: RGB (15fps), Gaze (30fps), IMU (800Hz-1KHz)
+- Annotation: Frame-by-frame behavioral labels
+- Scale: Proof-of-concept single-participant dataset
 
-### [🎓 Columbus Subset](https://github.com/AIoT-MLSys-Lab/Reading-in-the-Wild-Columbus#)
-The Columbus subset was was collected to find cases where models intended to discern whether participants are reading encounter failure points. It contains examples of hard negatives (where text is present but not being read), searching/browsing (which gives confusing gaze patterns), and the reading of non-English texts (where reading direction differs). This dataset is owned and distributed by Ohio State University (OSU). Meta do not host or redistribute the dataset. Please refer to the official OSU repository in the link for access and licensing information.
+## 🏃‍♂️ Training and Inference
 
+### Training
 
-## License
-
-Reading in the Wild - Seattle Subset dataset and code is released by Meta under the Creative Commons
-Attribution-NonCommercial 4.0 International License
-([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/legalcode)). Data
-and code may not be used for commercial purposes. For more information, please
-refer to the [LICENSE](./LICENSE) file included in this repository.
-
-### Attribution
-
-When using the dataset and code, please attribute it as follows:
-
+```bash
+python train.py --config configs/egodrive_max.yaml
+python train.py --config configs/egodrive_rt.yaml
 ```
-@inproceedings{yang25reading,
-      title={Reading Recognition in the Wild},
-      author={Charig Yang and Samiul Alam and Shakhrul Iman Siam and Michael Proulx and Lambert Mathias and Kiran Somasundaram and Luis Pesqueira and James Fort and Sheroze Sheriffdeen and Omkar Parkhi and Carl Ren and Mi Zhang and Yuning Chai and Richard Newcombe and Hyo Jin Kim},
-      booktitle={arXiv Preprint},
-      year={2025},
-      url={https://arxiv.org/abs/2505.24848},
+
+### Inference
+
+```bash
+python inference.py --model_path checkpoints/egodrive_rt.pth --input_dir data/test/
+```
+
+### Evaluation
+
+```bash
+python evaluate.py --model_path checkpoints/egodrive_rt.pth --test_data data/test/
+```
+
+## 📊 Results
+
+### Overall Performance
+
+| Metric         | EgoDriveMax | EgoDriveRT |
+| -------------- | ----------- | ---------- |
+| Accuracy       | 98.6%       | 97.4%      |
+| F1-Score       | 98.0%       | 96.6%      |
+| Parameters     | 42M         | 104K       |
+| Inference Time | 1595ms      | 2.65ms     |
+
+### Per-Action Results
+
+| Action       | EgoDriveMax Acc | EgoDriveRT Acc |
+| ------------ | --------------- | -------------- |
+| Driving      | 99.3%           | 98.7%          |
+| Left Mirror  | 96.9%           | 100%           |
+| Right Mirror | 97.4%           | 94.9%          |
+| Rear Mirror  | 97.9%           | 91.2%          |
+| Mobile Phone | 94.1%           | 96.3%          |
+| Idle         | 100%            | 97.1%          |
+
+## ⚠️ Limitations and Scope
+
+This work presents a proof-of-concept study with the following limitations:
+
+- **Single Participant**: Dataset collected from one driver in controlled conditions
+- **Limited Generalizability**: Results may not extend to diverse populations
+- **Controlled Environment**: Laboratory-style data collection setup
+- **Scope**: Technical feasibility demonstration rather than production system
+
+**Future Work**: Multi-participant validation, real-world testing, and privacy-preserving deployment strategies.
+
+## 📄 Citation
+
+If you use EgoDrive in your research, please cite:
+
+```bibtex
+@inproceedings{egodrive2023,
+    title={EgoDrive: An Egocentric, Multimodal Dataset and Methods for Driver Behavior Analysis},
+    author={Anonymous Authors},
+    booktitle={Proceedings of RANLP 2023},
+    year={2023}
 }
 ```
 
-### Contribute
+## 🔒 Ethics and Privacy
 
-We welcome contributions! Go to [CONTRIBUTING](.github/CONTRIBUTING.md) and our
-[CODE OF CONDUCT](.github/CODE_OF_CONDUCT.md) for how to contribute. -->
+- **Data Collection**: Conducted with informed consent and GDPR compliance
+- **Privacy**: Designed for on-device processing to keep PII local
+- **Safety**: Non-intrusive data collection ensuring driver safety
+- **Future Deployment**: Privacy-preserving principles for real-world applications
+
+## 📝 License
+
+This dataset and code are released under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0).
+
+> Note: This is a research dataset intended for academic and non-commercial use only.
+
+## 🤝 Contributing
+
+We welcome contributions! Please see `CONTRIBUTING.md` for guidelines.
+
+## 📞 Contact
+
+For questions about the dataset or technical issues, please open an issue or contact [[your-email@institution.edu](mailto\:your-email@institution.edu)].
+
+## ⚡ Key Insight
+
+This work demonstrates that effective multimodal driver behavior recognition is technically feasible with dramatic efficiency improvements, paving the way for practical egocentric driver monitoring systems.
