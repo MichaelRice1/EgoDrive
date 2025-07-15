@@ -2,6 +2,12 @@
 
 EgoDrive: Multimodal Driver Behavior Recognition using Project Aria
 
+<p align="center">
+ <img src="images_gifs/output3.gif" width="49%" alt="Annotated Dataset Samples" />
+ <img src="images_gifs/output2.gif" width="49%" alt="Synchronized Multimodal Data Streams" />
+</p>
+
+
 ## 🚗 Overview
 
 EgoDrive is the first egocentric, multimodal dataset for driver behavior analysis captured using Meta's Project Aria glasses. This proof-of-concept work demonstrates the technical feasibility of real-time driver behavior recognition through multimodal sensor fusion, combining RGB video, eye gaze tracking, hand pose estimation, IMU data, and semantic object detection.
