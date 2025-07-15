@@ -468,12 +468,14 @@ class EgoDriveMultimodalTransformer(nn.Module):
         dropout=0.3,
         num_frames=32,
         transformer_depth=2,
-        transformer_heads=4
+        transformer_heads=4,
+        light=False
     ):
         super().__init__()
 
         # unimodal encoders
-        self.rgb_encoder = RGBEncoder( dim_feat=dim_feat, dropout=dropout)
+        if not light:
+            self.rgb_encoder = RGBEncoder(dim_feat=dim_feat, dropout=dropout)
         self.object_encoder = ObjectDetectionEncoder( num_objects = 4, features_per_object=5, dim_feat=dim_feat, dropout=dropout)
         self.gaze_encoder = GazeEncoder(input_dim=2, dim_feat=dim_feat, dropout=dropout)
         self.hand_encoder = HandEncoder(dim_feat=dim_feat, input_dim=8, dropout=dropout, num_frames=num_frames)

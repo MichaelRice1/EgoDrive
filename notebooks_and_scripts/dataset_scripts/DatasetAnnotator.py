@@ -3,7 +3,7 @@ import sys
 import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from vrs_extractor import VRSDataExtractor
+from notebooks_and_scripts.dataset_scripts.vrs_extractor import VRSDataExtractor
 
 
 class DatasetAnnotator:
