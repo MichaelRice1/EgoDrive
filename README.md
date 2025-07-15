@@ -28,11 +28,6 @@ EgoDrive is the first egocentric, multimodal dataset for driver behavior analysi
 - **Modality-specific encoders** for RGB, gaze, hands, IMU, and object detection
 - **Temporal alignment strategies** for synchronized multimodal processing
 
-### Efficiency Breakthrough
-
-- **400x parameter reduction** (42M → 104K parameters)
-- **Minimal accuracy loss** (98.6% → 97.4%)
-- **Real-time inference** (1595ms → 2.65ms on Apple M4)
 
 ### Dataset Methodology
 
@@ -57,7 +52,7 @@ We developed two variants of our Multimodal Transformer architecture:
 - **Object Detection Encoder**: YOLO v11 features + temporal modeling
 - **IMU Encoder**: Stacked 1D CNNs + GRU for dynamics
 
-## 🚀 Getting Started
+<!-- ## 🚀 Getting Started
 
 ### Prerequisites
 
@@ -75,20 +70,21 @@ pip install -r requirements.txt
 - Transformers
 - OpenCV
 - NumPy
-- Project Aria Tools (for data processing)
+- Project Aria Tools (for data processing) -->
 
 ### 📦 Dataset
 
-**Data Structure** The EgoDrive dataset contains synchronized streams from Project Aria glasses:
+**Data Structure** The EgoDrive dataset, available upon request, is structured as follows.
 
 ```
 egodrive_dataset/
-├── rgb_videos/          # 15fps RGB camera
-├── gaze_data/           # 30fps eye tracking
-├── hand_poses/          # 3D hand landmarks
-├── imu_data/            # 800Hz-1KHz inertial data
-├── object_detections/   # YOLO v11 in-cabin detection
-└── annotations/         # Behavioral class labels
+├── drives/         # all driving sessions
+    ├── Drive1    # sample driving session
+        ├── vrs_file/   # contains aria native session data
+        ├── hand_poses/ # hand landmark data
+        ├── gaze_data/  # gaze data
+        ├── object_detections/   # YOLO v11 in-cabin detection
+        ├── annotations/         # contains the frame level action annotations
 ```
 
 **Behavioral Classes**
@@ -102,12 +98,12 @@ egodrive_dataset/
 
 **Data Characteristics**
 
-- Temporal Resolution: 32-frame sequences (2 seconds)
+- Training Samples: 32-frame sequence length (2.13 seconds)
 - Sampling Rates: RGB (15fps), Gaze (30fps), IMU (800Hz-1KHz)
 - Annotation: Frame-by-frame behavioral labels
 - Scale: Proof-of-concept single-participant dataset
 
-## 🏃‍♂️ Training and Inference
+<!-- ## 🏃‍♂️ Training and Inference
 
 ### Training
 
@@ -126,7 +122,7 @@ python inference.py --model_path checkpoints/egodrive_rt.pth --input_dir data/te
 
 ```bash
 python evaluate.py --model_path checkpoints/egodrive_rt.pth --test_data data/test/
-```
+``` -->
 
 ## 📊 Results
 
@@ -161,7 +157,7 @@ This work presents a proof-of-concept study with the following limitations:
 
 **Future Work**: Multi-participant validation, real-world testing, and privacy-preserving deployment strategies.
 
-## 📄 Citation
+<!-- ## 📄 Citation
 
 If you use EgoDrive in your research, please cite:
 
@@ -172,7 +168,7 @@ If you use EgoDrive in your research, please cite:
     booktitle={Proceedings of RANLP 2023},
     year={2023}
 }
-```
+``` -->
 
 ## 🔒 Ethics and Privacy
 
@@ -187,14 +183,14 @@ This dataset and code are released under the Creative Commons Attribution-NonCom
 
 > Note: This is a research dataset intended for academic and non-commercial use only.
 
-## 🤝 Contributing
+<!-- ## 🤝 Contributing
 
-We welcome contributions! Please see `CONTRIBUTING.md` for guidelines.
+We welcome contributions! Please see `CONTRIBUTING.md` for guidelines. -->
 
 ## 📞 Contact
 
-For questions about the dataset or technical issues, please open an issue or contact [[your-email@institution.edu](mailto\:your-email@institution.edu)].
+For questions about the dataset or technical issues, please open an issue or contact [[athenrymichael@gmail.com](mailto\:athenrymichael@gmail.com)].
 
 ## ⚡ Key Insight
 
-This work demonstrates that effective multimodal driver behavior recognition is technically feasible with dramatic efficiency improvements, paving the way for practical egocentric driver monitoring systems.
+This work demonstrates that effective multimodal driver behavior recognition is feasible, potentially paving the way for practical egocentric driver monitoring systems for use in myriad cases.
