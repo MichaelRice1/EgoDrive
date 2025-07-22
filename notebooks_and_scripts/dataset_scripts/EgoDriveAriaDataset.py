@@ -15,7 +15,6 @@ class EgoDriveAriaDataset():
         self.frames_per_clip = frames_per_clip
         self.annotations_path = annotations_path
 
-
     def processed_annotations(self, len_frames ,annotations):
         expanded = pd.DataFrame(columns=['start_frame', 'end_frame', 'action'])
 

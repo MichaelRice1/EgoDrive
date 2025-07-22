@@ -21,6 +21,8 @@ from projectaria_tools.core.mps.utils import (
     get_nearest_pose,
     get_nearest_hand_tracking_result
 )
+import sys
+sys.path.append('utilities')
 
 os.environ['YOLO_VERBOSE'] = 'False'
 
@@ -38,7 +40,7 @@ class VRSDataExtractor():
         self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
         
         self.provider.set_devignetting(True)
-        self.provider.set_devignetting_mask_folder_path('utilities/devignetting_masks_bin')
+        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/utilities/devignetting_masks_bin')
         
         self.device_calibration = self.provider.get_device_calibration()
         self.rgb_camera_calibration = self.device_calibration.get_camera_calib('camera-rgb')
@@ -1024,7 +1026,7 @@ class VRSDataExtractor():
             7: 'Steering Wheel'
         }
         
-        model_weight_path = 'utilities/InCabinObjectDet.pt'
+        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/models/InCabinObjectDet.pt'
         model = YOLO(model_weight_path)
         results = []
         device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")

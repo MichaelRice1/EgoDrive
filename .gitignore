@@ -28,3 +28,5 @@ test_results/all_modalities/1/multimodal_epoch=09_val_acc=0.975.ckpt
 test_results/all_modalities/1/wandb.zip
 notebooks_and_scripts/yolo.ipynb
 notebooks_and_scripts/dashboard
+notebooks_and_scripts/preds
+notebooks_and_scripts/.env

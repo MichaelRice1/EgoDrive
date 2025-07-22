@@ -3,10 +3,9 @@
 
 import os 
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from notebooks_and_scripts.dataset_scripts.vrs_extractor import VRSDataExtractor
+from vrs_extractor import VRSDataExtractor
 import pandas as pd
-from projectaria_tools.core.mps import EyeGaze, get_eyegaze_point_at_depth
+from projectaria_tools.core.mps import EyeGaze
 from projectaria_tools.core.mps.utils import get_gaze_vector_reprojection
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 

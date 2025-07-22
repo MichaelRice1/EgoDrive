@@ -35,24 +35,26 @@ class Writer:
                 
                 aligner = EgoDriveAriaAligner(data=data, primary_visual_modality='rgb', max_time_gap=5e7)
                 aligned_data = aligner.align_drive()
+
+                np.save(data_path, aligned_data, allow_pickle=True)
                 del data
 
-                annotations_path = os.path.join(folder_path, 'actions.csv')
-                dataset_creator = EgoDriveAriaDataset(aligned_data, image_size=224, frames_per_clip=32, annotations_path=annotations_path)
-                dataset_creator.process_folder(aligned_data, annotations_path)
+                # annotations_path = os.path.join(folder_path, 'actions.csv')
+                # dataset_creator = EgoDriveAriaDataset(aligned_data, image_size=224, frames_per_clip=32, annotations_path=annotations_path)
+                # dataset_creator.process_folder(aligned_data, annotations_path)
 
-                # Flush data from mem
+                # # Flush data from mem
                 
-                del aligned_data
-                del dataset_creator
-                del aligner
+                # del aligned_data
+                # del dataset_creator
+                # del aligner
 
 
 
 
 if __name__ == "__main__":
-    folder_path = '/Volumes/MichaelSSD/dataset/RawData(VRS&MPS)'
-    written_folders = []
+    folder_path = '/Volumes/MichaelSSD/EgoDrive/RawDataset(VRS&MPS)'
+    written_folders = ['Drive1', 'Drive2', 'Drive3', 'Drive5', 'Drive6', 'Drive7', 'Drive8', 'Drive9', 'Drive10', 'Drive13', 'Drive14', 'Drive15']
     writer = Writer(folder_path)
     writer.write(folder_path, written_folders)
 
