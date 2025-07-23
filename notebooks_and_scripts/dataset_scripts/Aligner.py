@@ -1,6 +1,5 @@
 import numpy as np
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass
+from typing import Dict, Any
 import numpy as np
 from scipy.interpolate import interp1d
 
@@ -247,7 +246,7 @@ class EgoDriveAriaAligner:
         aligner = EgoDriveAriaAligner(
             data=self.data,
             primary_visual_modality='rgb',
-            max_time_gap=5e7  # 50ms max gap
+            max_time_gap=5e7 
         )
 
         rgb_data = aligner.data['rgb']

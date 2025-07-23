@@ -23,10 +23,9 @@ from projectaria_tools.core.mps.utils import (
 )
 import sys
 sys.path.append('utilities')
-
 os.environ['YOLO_VERBOSE'] = 'False'
-
-import sys
+sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts')
+from preds.Predictor import Predictor
 
 
 class VRSDataExtractor():
@@ -1100,271 +1099,415 @@ class VRSDataExtractor():
 
         return blended, xmin, ymin, xmax, ymax
 
-    def evaluate_driving(self,frames, smoothed_gaze, object_dets, imu_gx,imu_gy,imu_gz,hand_lm, video_save_path, progress_callback=None, gaze_predictions = None):
-        consecutive_frames_threshold = 8
+    def evaluate_driving(self, processed, odr, video_save_path, progress_callback=None):
+        """Enhanced version that creates montage-style mistake videos per category"""
+        
         overlays = []
+        result = {}
 
-        action_tracking = {
-            "Left Wing Mirror": [],
-            "Right Wing Mirror": [],
-            "Rearview Mirror": [],
-            "Mobile Phone": []
-        }
+        frames = processed['frames']
+        object_dets = processed['object_detections']
+        hands = processed['hands']
+        gaze = processed['gaze']
 
         action_counters = {
-            "Left Wing Mirror": 0,
-            "Right Wing Mirror": 0,
-            "Rearview Mirror": 0,
-            "Mobile Phone": 0,
-            "Cross Steering": 0
+            'left wing mirror check': 0,
+            'right wing mirror check': 0,
+            'rearview wing mirror check': 0,
+            "mobile phone usage": 0
         }
 
-        direction = "Forward"
+        labels_map = {'0': 'left wing mirror check',
+                '1': 'rear view mirror check',
+                '2': 'right wing mirror check',
+                '3': 'driving',
+                '4': 'idle',
+                '5': 'mobile phone usage'}
 
-        if gaze_predictions is not None:
-            smoothed_gaze = gaze_predictions
+        clr_map = {
+            'left wing mirror check': (255, 0, 0),
+            'rear view mirror check': (0, 255, 0),
+            'right wing mirror check': (255, 0, 255),
+            'driving': (0, 0, 255),
+            'idle': (255, 255, 0),
+            'mobile phone usage': (0, 255, 255)
+        }
 
+        # Initialize counters and trackers (ORIGINAL LOGIC)
         crossover_frame_count = 0
         hands_on_wheel = 0
         gear_change_frame_counter = 0
         gear_change_action_counter = 0
         threshold_frames = 10
-        one_handed_driving_counter= 0
+        one_handed_driving_counter = 0
         bad_steering_counter = 0
         infotainment_distraction_counter = 0
         speedometer_checks = 0
+        mobile_phone_counter = 0
 
         fixations = []
 
-        for i, (frame, sg, od, hlm) in enumerate(zip(frames, smoothed_gaze, object_dets, hand_lm)):
-            
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            if gaze_predictions is None:
-                sg = int(sg[0] * (512 / 1408)), int(sg[1] * (512 / 1408))
+        # Get predictions
+        p = Predictor(data=processed)
+        preds = p.run(overlap=0.5, fpc=32)
+        self.result['preds'] = preds
 
+        line_pointer = 0
+        action_frames = []
+
+        # Enhanced mistake tracking - MONTAGE STYLE (collect all frames per category)
+        mistake_frames = {
+            'one_handed_driving': [],
+            'infotainment_distraction': [],
+            'mobile_phone_usage': [],  
+            'hand_crossover': [],
+            'gear_changes': []
+        }
+        
+        # State tracking for mistake detection
+        mistake_states = {
+            'one_handed': {'active': False, 'count': 0},
+            'infotainment': {'active': False, 'count': 0},
+            'mobile_phone': {'active': False, 'count': 0},
+            'crossover': {'active': False, 'count': 0},
+            'gear_change': {'active': False, 'count': 0}
+        }
+
+        # Initialize original variables
+        s = False
+        oneh_count = 0
+        info_count = 0
+        oneh = False
+        info = False
+        
+        # ORIGINAL gear change state tracking
+        gear_change_state = "idle"
+
+        # Process frames to create action_frames with labels
+        for i, frame in enumerate(frames):
+            if line_pointer < len(preds):
+                line = preds[line_pointer]
+                start = line['start']
+                end = line['end']
+                label = labels_map[str(line['class'])]
+                colour = clr_map[label]
+
+                if start <= i < end:
+                    resized_frame = cv2.resize(frame, (512, 512))
+                    colour_correction = cv2.cvtColor(resized_frame, cv2.COLOR_RGB2BGR)
+                    res = cv2.copyMakeBorder(colour_correction, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=colour)
+
+                    text_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
+                    text_width = text_size[0]
+                    x_center = (res.shape[1] - text_width) // 2
+                    y_pos = 40
+
+                    cv2.putText(res, label, (x_center, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1, colour, 3)
+                    action_frames.append(res)
+
+                    if label == 'mobile phone usage':
+                        action_counters['mobile phone usage'] += 1
+
+                    if i == end - 1:
+                        line_pointer += 1
+                else:
+                    resized_frame = cv2.resize(frame, (512, 512))
+                    colour_correction = cv2.cvtColor(resized_frame, cv2.COLOR_RGB2BGR)
+                    res = cv2.copyMakeBorder(colour_correction, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=(128, 128, 128))
+                    action_frames.append(res)
+
+        # Create main video writer and mistake video directory
+        if not os.path.exists(video_save_path):
+            os.makedirs(video_save_path)
+            
+        main_video_path = os.path.join(video_save_path, "driving_evaluation.mp4")
+        mistake_videos_dir = os.path.join(video_save_path, "mistake_videos")
+        if not os.path.exists(mistake_videos_dir):
+            os.makedirs(mistake_videos_dir)
+        
+        if action_frames:
+            height, width, _ = action_frames[0].shape
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            main_video_writer = cv2.VideoWriter(main_video_path, fourcc, 15, (width, height))
+        else:
+            print("Warning: No action frames generated")
+            return
+
+        # Process each frame for mistake detection (ORIGINAL LOGIC RESTORED)
+        for i, (frame, g, od, h) in enumerate(zip(action_frames, gaze, odr, hands)):
+            frame = cv2.resize(frame, (width, height))
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # Gaze fixation tracking
             if i == 0:
-                prev_gaze = sg
+                prev_gaze = g
                 gaze_fixation_duration = 0
             else:
-                prev_gaze = smoothed_gaze[i - 1]
-                if sg is not None and prev_gaze is not None:
-                    distance = math.hypot(sg[0] - prev_gaze[0], sg[1] - prev_gaze[1])
-                    if distance < 30:  # Threshold for fixation
+                prev_gaze = gaze[i - 1]
+                if g is not None and prev_gaze is not None:
+                    distance = math.hypot(g[0] - prev_gaze[0], g[1] - prev_gaze[1])
+                    if distance < 0.1:
                         gaze_fixation_duration += 1
                     else:
                         fixations.append(gaze_fixation_duration)
                         gaze_fixation_duration = 0
 
+            # Extract hand positions
+            left_wrist = h[0:2] 
+            left_palm = h[2:4] 
+            right_wrist = h[4:6]
+            right_palm = h[6:8]
 
+            frame_width = frame.shape[1]
+            frame_height = frame.shape[0]
+            hands_frame = frame_rgb.copy()
 
-            overlay, xmin, ymin, xmax, ymax = self.overlay_gaze_heatmap(frame_rgb, sg, angle_error=4, threshold=0.1)
-            gaussian_area = (xmax - xmin) * (ymax - ymin)
+            # Draw hand keypoints
+            if not np.isnan(left_wrist[0]) and not np.isnan(left_wrist[1]):
+                hands_frame = cv2.circle(hands_frame, (int(left_wrist[0] * frame_width), int(left_wrist[1] * frame_height)), 5, (0, 255, 0), -1)
 
-            imu_per_frame = 1000 / 15 
-
-            gx_samples = imu_gx[i * int(imu_per_frame):(i + 1) * int(imu_per_frame)]
-            gy_samples = imu_gy[i * int(imu_per_frame):(i + 1) * int(imu_per_frame)]
-            gz_samples = imu_gz[i * int(imu_per_frame):(i + 1) * int(imu_per_frame)]
+            if not np.isnan(left_palm[0]) and not np.isnan(left_palm[1]):
+                hands_frame = cv2.circle(hands_frame, (int(left_palm[0] * frame_width), int(left_palm[1] * frame_height)), 5, (0, 255, 0), -1)
             
-            max_gx = gx_samples[np.argmax(np.abs(gx_samples))]
-            max_gy = gy_samples[np.argmax(np.abs(gy_samples))]
-            max_gz = gz_samples[np.argmax(np.abs(gz_samples))]
-
-            left_landmarks = hlm['left_landmarks']
-            right_landmarks = hlm['right_landmarks']
-
-            left_wrist = hlm['left_wrist'] if 'left_wrist' in hlm else None
-            left_palm = hlm['left_palm'] if 'left_palm' in hlm else None
-            right_wrist = hlm['right_wrist'] if 'right_wrist' in hlm else None
-            right_palm = hlm['right_palm'] if 'right_palm' in hlm else None
-
-
-            if all(x is not None for x in [left_wrist, left_palm, right_wrist, right_palm]):
-                for b in od:
-                    if b['class'] == 'Steering Wheel':
-                        x1, y1, x2, y2 = b['bounding_box']
-                        wheel_center = ((x1 + x2) / 2, (y1 + y2) / 2)
-
-                        left_dist = min(
-                            math.hypot(wheel_center[0] - left_wrist[0], wheel_center[1] - left_wrist[1]),
-                            math.hypot(wheel_center[0] - left_palm[0], wheel_center[1] - left_palm[1])
-                        )
-                        right_dist = min(
-                            math.hypot(wheel_center[0] - right_wrist[0], wheel_center[1] - right_wrist[1]),
-                            math.hypot(wheel_center[0] - right_palm[0], wheel_center[1] - right_palm[1])
-                        )
-
-                        if left_dist < 80 and right_dist < 80:  # Adjust threshold as needed
-                            hands_on_wheel += 1
-
-                        cv2.putText(overlay, f"Hands on Wheel: {hands_on_wheel}", (25, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                                    
-
-                        
-            if (right_wrist is not None and right_palm is not None) and (left_wrist is None and left_palm is None):
-                gear_change_frame_counter += 1
-
-            if (left_wrist is not None and left_palm is not None) and gear_change_frame_counter >= 0:
-                if gear_change_frame_counter >= 1 and gear_change_frame_counter < 30:
-                    gear_change_frame_counter = 0  
-                    gear_change_action_counter += 1
-                    cv2.putText(overlay, "Potential Gear Change Occurred", (25, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-
-            if ((right_wrist is not None and right_palm is not None) and (left_wrist is None and left_palm is None)) or ((left_wrist is not None and left_palm is not None) and (right_wrist is None and right_palm is None)):
-                one_handed_driving_counter += 1
-                cv2.putText(overlay, "Potential One-Handed Driving Detected", (25, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-
-            # bad steering detection
-
-
-            if right_palm is not None and left_palm is not None:
-                rightpalm_x = right_palm[0]
-                leftpalm_x = left_palm[0]
-
-                if rightpalm_x is not None and leftpalm_x is not None:
-                    crossover = (rightpalm_x - leftpalm_x) < 0
-
-                    # Add to a moving window or debounce using a frame counter
-                    if crossover:
-                        crossover_frame_count += 1
-                    else:
-                        crossover_frame_count = 0
-
-                    if crossover_frame_count > threshold_frames:
-                        bad_steering_counter += 1
-                        crossover_frame_count = 0  # reset or keep counting if continuous
-                    cv2.putText(overlay, f"Potential Hand Crossover Detected ", (25, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-
+            if not np.isnan(right_wrist[0]) and not np.isnan(right_wrist[1]):
+                hands_frame = cv2.circle(hands_frame, (int(right_wrist[0] * frame_width), int(right_wrist[1] * frame_height)), 5, (0, 255, 0), -1)
             
-            scale = 512 / 1408
-            image_width = 512
+            if not np.isnan(right_palm[0]) and not np.isnan(right_palm[1]):
+                hands_frame = cv2.circle(hands_frame, (int(right_palm[0] * frame_width), int(right_palm[1] * frame_height)), 5, (0, 255, 0), -1)
 
+            # Draw gaze point
+            if not np.isnan(g[0]) and not np.isnan(g[1]):
+                gaze_x = int(g[0] * frame_width)
+                gaze_y = int(g[1] * frame_height)
+                frame = cv2.circle(hands_frame, (gaze_x, gaze_y), 5, (255, 0, 0), -1)
+            else:
+                frame = hands_frame
 
-            if left_landmarks is not None:
-                left_landmarks = [
-                    (image_width - l[1] * scale, l[0] * scale) if l is not None else None
-                    for l in left_landmarks
-                ]
-
-            if right_landmarks is not None:
-                right_landmarks = [
-                    (image_width - r[1] * scale, r[0] * scale) if r is not None else None
-                    for r in right_landmarks
-                ]
-
-                
-            overlay = self.draw_landmarks_and_connections(overlay,left_landmarks,right_landmarks,mps.hand_tracking.kHandJointConnections)
-            
-
-            if direction == "Forward":
-                if max_gx > 1.0:
-                    direction = "Right"
-                elif max_gx < -1.0:
-                    direction = "Left"
-                
-
-            elif direction == "Right":
-                if max_gx < -0.5:
-                    direction = "Forward"
-
-            elif direction == "Left":
-                if max_gx > 0.5:
-                    direction = "Forward"
-
-            
-            cv2.putText(overlay, f"Head Direction: {direction}", (25, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
+            # Check for hands on steering wheel
             for b in od:
-                if b['class'] == 'Infotainment Unit':
+                if b['class'] == 'Steering Wheel':
                     x1, y1, x2, y2 = b['bounding_box']
-                    gx, gy = sg[0], sg[1]
+                    
+                    halfway_leftside = [x1, (y1+y2)//2]
+                    halfway_rightside = [x2, (y1+y2)//2]
+
+                    # Fixed distance calculation
+                    if not np.isnan(left_palm[0]) and not np.isnan(left_palm[1]):
+                        left_dist = math.sqrt((int(halfway_leftside[0]) - left_palm[0] * frame_width)**2 + 
+                                            (int(halfway_leftside[1]) - left_palm[1] * frame_height)**2)
+                    else:
+                        left_dist = float('inf')
+                    
+                    if not np.isnan(right_palm[0]) and not np.isnan(right_palm[1]):
+                        right_dist = math.sqrt((int(halfway_rightside[0]) - right_palm[0] * frame_width)**2 + 
+                                            (int(halfway_rightside[1]) - right_palm[1] * frame_height)**2)
+                    else:
+                        right_dist = float('inf')
+
+                    if left_dist < 30 and right_dist < 30:
+                        hands_on_wheel += 1
+                        frame = cv2.putText(frame, "Both Hands on Wheel", (25, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+            # ORIGINAL gear change detection logic
+            if (not np.isnan(right_wrist[0]) and not np.isnan(right_palm[0])
+                and np.isnan(left_wrist[0]) and np.isnan(left_palm[0])):
+                
+                if gear_change_state == "idle":
+                    gear_change_state = "right_only"
+                    gear_change_frame_counter = 1
+                elif gear_change_state == "right_only":
+                    gear_change_frame_counter += 1
+
+            elif not np.isnan(left_wrist[0]) or not np.isnan(left_palm[0]):
+                
+                if gear_change_state == "right_only":
+                    if 5 <= gear_change_frame_counter < 30:
+                        gear_change_action_counter += 1
+                        cv2.putText(frame, "Potential Gear Change Occurred", (25, 75),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        # Add to mistake frames for montage
+                        mistake_frames['gear_changes'].append(frame.copy())
+                        
+                    gear_change_state = "idle"
+                    gear_change_frame_counter = 0
+
+            else:
+                # Reset state if neither condition is met for too long
+                if gear_change_state == "right_only" and gear_change_frame_counter >= 30:
+                    gear_change_state = "idle"
+                    gear_change_frame_counter = 0
+
+            # ORIGINAL bad steering detection (hand crossover)
+            if not np.isnan(right_palm[0]) and not np.isnan(right_palm[1]) and not np.isnan(left_palm[0]) and not np.isnan(left_palm[1]):
+                rightpalm_x = right_palm[0] * frame_width
+                leftpalm_x = left_palm[0] * frame_width
+
+                if rightpalm_x < leftpalm_x:
+                    crossover = True
+                else:
+                    crossover = False
+
+                if crossover:
+                    crossover_frame_count += 1
+                    # Add to mistake frames for montage
+                    mistake_frames['hand_crossover'].append(frame.copy())
+                else:
+                    crossover_frame_count = 0
+
+                if crossover_frame_count > threshold_frames:
+                    bad_steering_counter += 1
+                    crossover_frame_count = 0  # reset or keep counting if continuous
+                    cv2.putText(frame, "Potential Hand Crossover Detected", (25, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+            # Check for infotainment distraction and speedometer
+            for b in od:
+                if b['class'] == 'Infotainment Unit' and not np.isnan(g[0]) and not np.isnan(g[1]):
+                    x1, y1, x2, y2 = b['bounding_box']
+                    gx, gy = g[0] * frame_width, g[1] * frame_height
+                    
                     if x1 <= gx <= x2 and y1 <= gy <= y2:
                         infotainment_distraction_counter += 1
-                        cv2.putText(overlay, "Infotainment Distraction Detected", (25, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-                        
-                
-                if b['class'] == 'Speedometer':
+                        info = True
+                        cv2.putText(frame, "Infotainment Distraction Detected", (25, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                        # Add to mistake frames for montage
+                        mistake_frames['infotainment_distraction'].append(frame.copy())
+                    elif info:
+                        info = False
+                        info_count += 1
+                            
+                elif b['class'] == 'Speedometer' and not np.isnan(g[0]) and not np.isnan(g[1]):
                     x1, y1, x2, y2 = b['bounding_box']
-                    gx, gy = sg[0], sg[1]
-                    if (x1 <= gx <= x2 and y1 <= gy <= y2) and s == False:
+                    gx, gy = g[0] * frame_width, g[1] * frame_height
+                    
+                    if (x1 <= gx <= x2 and y1 <= gy <= y2) and not s:
                         s = True
                         speedometer_checks += 1
-                        cv2.putText(overlay, "Speedometer Check Detected", (25, 175), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                    else:
+                        cv2.putText(frame, "Speedometer Check Detected", (25, 175), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    elif not (x1 <= gx <= x2 and y1 <= gy <= y2):
                         s = False
-                    
-            # for b in od:
-            #     x1, y1, x2, y2 = b['bounding_box']
-            #     bbox_area = (x2 - x1) * (y2 - y1)
-            #     label = b['class']
 
-            #     # if "Phone" in label:
-            #     #     action_tracking[label].append(i)
-            #     #     cv2.putText(overlay, f"Mobile Phone In Use", (25, 75),
-            #     #                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            # Check for mobile phone usage from current frame prediction
+            if i < len(preds):
+                current_pred_index = None
+                for idx, pred in enumerate(preds):
+                    if pred['start'] <= i < pred['end']:
+                        current_pred_index = idx
+                        break
+                
+                if current_pred_index is not None:
+                    current_label = labels_map[str(preds[current_pred_index]['class'])]
+                    if current_label == 'mobile phone usage':
+                        mobile_phone_counter += 1
+                        # Add to mistake frames for montage
+                        mistake_frames['mobile_phone_usage'].append(frame.copy())
 
+            # ORIGINAL one-handed driving detection
+            if ((not np.isnan(right_wrist[0]) and not np.isnan(right_palm[0])) and (np.isnan(left_wrist[0]) or np.isnan(left_palm[0]))) or ((not np.isnan(left_wrist[0]) and not np.isnan(left_palm[0])) and (np.isnan(right_wrist[0]) or np.isnan(right_palm[0]))):
+                
+                oneh = True
+                one_handed_driving_counter += 1
+                cv2.putText(frame, "Potential One-Handed Driving Detected", (25, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                # Add to mistake frames for montage
+                mistake_frames['one_handed_driving'].append(frame.copy())
+                
+            elif oneh:
+                oneh = False
+                oneh_count += 1
 
-            #     if "Mirror" in label:
-            #         width, height = x2 - x1, y2 - y1
-            #         x1 = x1.clone() - (0.3 * width)
-            #         x2 = x2.clone() + (0.3 * width)
-            #         y1 = y1.clone() - (0.3 * height)
-            #         y2 = y2.clone() + (0.3 * height)
-
-            #         intersection_area = max(0, min(x2, xmax) - max(x1, xmin)) * max(0, min(y2, ymax) - max(y1, ymin))
-            #         union_area = bbox_area + gaussian_area - intersection_area
-            #         IoU = intersection_area / union_area if union_area > 0 else 0
-
-            #         if IoU > 0.25:
-            #             gaze_on_mirror[label] = True
-
-            # for mirror in mirror_counters:
-            #     if gaze_on_mirror[mirror]:
-            #         mirror_counters[mirror] += 1
-            #     else:
-            #         mirror_counters[mirror] = 0
-
-            #     if mirror_counters[mirror] >= consecutive_frames_threshold:
-            #         if i not in action_tracking[mirror]:
-            #             action_tracking[mirror].append(i)
-
-            #         cv2.putText(overlay, f"{mirror} Check Detected", (25, 50 + 30 * list(mirror_counters.keys()).index(mirror)),
-            #                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-
-
-        
             if progress_callback:
                 progress_callback(i + 1, len(frames))
 
-            overlays.append(overlay)
-        
-        # Create an MP4 video from overlays
-        if not os.path.exists(video_save_path):
-            os.makedirs(video_save_path)
-        video_save_path = os.path.join(video_save_path, "driving_evaluation.mp4")
-        height, width, _ = overlays[0].shape
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_writer = cv2.VideoWriter(video_save_path, fourcc, 15, (width, height))
+            overlays.append(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
+        # Write main video
         for overlay in overlays:
-            video_writer.write(overlay)
+            main_video_writer.write(overlay)
+        main_video_writer.release()
 
-        video_writer.release()
+        # Create montage-style mistake videos (one per category)
+        mistake_video_paths = {}
+        for mistake_type, frames_list in mistake_frames.items():
+            if frames_list and len(frames_list) >= 5:  # Only create video if there are frames
+                video_filename = f"{mistake_type}_montage.mp4"
+                video_path = os.path.join(mistake_videos_dir, video_filename)
+                self.create_montage_video(frames_list, video_path, mistake_type)
+                mistake_video_paths[mistake_type] = video_path
 
+        # Calculate results
         mean_gaze_fixation_duration = np.mean(fixations) if fixations else 0
-        self.result['mean_gaze_fixation_duration'] = mean_gaze_fixation_duration
-        self.result['one_handed_percent'] = round((one_handed_driving_counter - gear_change_frame_counter) / (len(hand_lm)) * 100 , 4)
-        self.result['crossover_percent'] = round(bad_steering_counter / (len(hand_lm)) * 100, 4)
-        self.result['infotainment_distraction_percent'] = round(infotainment_distraction_counter / (len(hand_lm)) * 100, 4)
+        self.result['mean_gaze_fixation_duration_sec'] = round(mean_gaze_fixation_duration / 15, 4)
+        self.result['one_handed_percent'] = round((one_handed_driving_counter - gear_change_frame_counter) / len(hands) * 100, 4)
+        self.result['crossover_percent'] = round(bad_steering_counter / len(hands) * 100, 4)
+        self.result['infotainment_distraction_percent'] = round(infotainment_distraction_counter / len(hands) * 100, 4)
+        self.result['mobile_phone_usage_percent'] = round(mobile_phone_counter / len(hands) * 100, 4)
         self.result['speedometer_checks'] = speedometer_checks
-
-
-        self.result['video_path'] = video_save_path
+        self.result['action_counts'] = action_counters
+        self.result['mistake_frames'] = mistake_frames
+        self.result['mistake_videos'] = mistake_video_paths
+        self.result['mistake_videos_directory'] = mistake_videos_dir
+        self.result['mistake_summary'] = {
+            'one_handed_driving_frames': len(mistake_frames['one_handed_driving']),
+            'infotainment_distraction_frames': len(mistake_frames['infotainment_distraction']),
+            'mobile_phone_usage_frames': len(mistake_frames['mobile_phone_usage']),
+            'hand_crossover_frames': len(mistake_frames['hand_crossover']),
+            'gear_change_frames': len(mistake_frames['gear_changes'])
+        }
+        self.result['video_path'] = main_video_path
         self.result['overlays'] = overlays
-        self.result['action_tracking'] = action_tracking
-        self.result['joined_intervals'] = self.join_action_interval(action_tracking)
+
+        print("=== Mistake Detection & Montage Video Generation Complete ===")
+        print(f"Main video saved: {main_video_path}")
+        print(f"Mistake videos directory: {mistake_videos_dir}")
+        for mistake_type, frame_count in self.result['mistake_summary'].items():
+            if frame_count > 0:
+                print(f"{mistake_type}: {frame_count} frames")
+        
+    def create_montage_video(self, frames_list, output_path, mistake_type):
+        """Create a montage-style video containing all frames of a specific mistake type"""
+        if not frames_list:
+            return
+        
+        height, width = frames_list[0].shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(output_path, fourcc, 15, (width, height))
+        
+        # Add title frame
+        title_frame = self.create_mistake_title_frame(mistake_type, (width, height), len(frames_list))
+        video_writer.write(title_frame)
+        
+        # Write all mistake frames
+        for frame in frames_list:
+            # Ensure frame is in BGR format for video writer
+            video_writer.write(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        
+        video_writer.release()
+        print(f"Created montage video: {output_path} ({len(frames_list)} frames)")
+
+    def create_mistake_title_frame(self,mistake_type, frame_size, frame_count):
+        """Create a title frame for the mistake montage video"""
+        width, height = frame_size
+        title_frame = np.zeros((height, width, 3), dtype=np.uint8)
+        
+        # Add title text
+        title_text = f"{mistake_type.replace('_', ' ').upper()} MONTAGE"
+        title_size = cv2.getTextSize(title_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        title_x = (width - title_size[0]) // 2
+        cv2.putText(title_frame, title_text, (title_x, height//2 - 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        # Add frame count
+        count_text = f"Total Frames: {frame_count}"
+        count_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+        count_x = (width - count_size[0]) // 2
+        cv2.putText(title_frame, count_text, (count_x, height//2 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        
+        # Add duration info
+        duration_text = f"Duration: {frame_count/15:.1f} seconds"
+        duration_size = cv2.getTextSize(duration_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)[0]
+        duration_x = (width - duration_size[0]) // 2
+        cv2.putText(title_frame, duration_text, (duration_x, height//2 + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        
+        return title_frame
 
     def draw_landmarks_and_connections(self, image, left_landmarks, right_landmarks, connections):
         def draw_point(img, point, color):
@@ -1454,86 +1597,179 @@ class VRSDataExtractor():
         
         return joined_actions        
 
-    def score_driver(self, num_frames, action_intervals, video_save_path):
+    def score_driver(self, results, idle_class=4):
         """
         Score the driving based on detected actions.
         Returns an overall score between 0 and 1, as well as other statistics.
+        Resets scoring during idle periods where no mirror checks are required.
+        
+        Args:
+            results: Dictionary containing 'preds' with prediction data
+            video_save_path: Path to save video (unused in current implementation)
+            idle_class: Class ID for idle behavior (default: 4)
         """
-
         score = 100
-
-        rwm = 0
-        lwm = 0
-        rvm = 0
-        mistake_sections = []
-        num_mp_frames = 0
-
-
-        mp_ints = action_intervals.get("Mobile Phone", [])
-
-        if mp_ints:
-            for start, end in mp_ints:
-                num_mp_frames += (end - start)
-                mistake_sections.append((start, end, f'Mobile phone usage, seconds {int(start/15)} to {int(end/15)}'))
+        driving_start = 0
+        driving_end = 0
+        preds = results['preds']
+        fps = 15
+        
+        # Find the first and last occurrence of driving (label == 3)
+        for pred in preds:
+            if pred['class'] == 3:
+                driving_start = pred['start']
+                break
+        
+        for pred in reversed(preds):
+            if pred['class'] == 3:
+                driving_end = pred['end']
+                break
+        
+        if driving_start == 0 and driving_end == 0:
+            print("No driving behavior detected")
+            return 0, {"lw_score": 0, "rw_score": 0, "rv_score": 0, "idle_periods": []}
+        
+        # Identify idle periods within the driving session
+        idle_periods = []
+        for pred in preds:
+            if (pred['class'] == idle_class and 
+                pred['start'] >= driving_start and 
+                pred['end'] <= driving_end):
+                idle_periods.append((pred['start'], pred['end']))
+        
+        # Merge overlapping idle periods
+        idle_periods = self.merge_overlapping_periods(idle_periods)
+        
+        print(f"Detected {len(idle_periods)} idle periods during driving")
+        
+        # Calculate active driving periods (excluding idle)
+        active_periods = self.get_active_periods(driving_start, driving_end, idle_periods)
+        
+        if not active_periods:
+            print("No active driving periods found (all time was idle)")
+            return 0, {"lw_score": 0, "rw_score": 0, "rv_score": 0, "idle_periods": idle_periods}
+        
+        # Calculate scores only for active driving periods
+        rv_seg_size = 10  # seconds
+        wing_seg_size = 30  # seconds
+        
+        rv_scores = []
+        lw_scores = []
+        rw_scores = []
+        
+        # Process each active driving period
+        for period_start, period_end in active_periods:
+            period_frames = period_end - period_start
             
+            # Rearview mirror scoring for this period
+            num_rv_segs = math.ceil(period_frames / (rv_seg_size * fps))
+            period_rv = []
             
-
-        segment_intervals = {i: [] for i in range(0, num_frames, 30*15)}
+            for i in range(num_rv_segs):
+                seg_start = period_start + i * rv_seg_size * fps
+                seg_end = min(period_start + (i + 1) * rv_seg_size * fps, period_end)
+                
+                valid_preds = [p for p in preds if p['start'] >= seg_start and p['end'] <= seg_end]
+                rv_present = any(p['class'] == 1 for p in valid_preds)
+                period_rv.append(rv_present)
+            
+            if period_rv:
+                rv_scores.extend(period_rv)
+            
+            # Wing mirror scoring for this period
+            num_wing_segs = math.ceil(period_frames / (wing_seg_size * fps))
+            period_lw = []
+            period_rw = []
+            
+            for i in range(num_wing_segs):
+                seg_start = period_start + i * wing_seg_size * fps
+                seg_end = min(period_start + (i + 1) * wing_seg_size * fps, period_end)
+                
+                valid_preds = [p for p in preds if p['start'] >= seg_start and p['end'] <= seg_end]
+                lw_present = any(p['class'] == 0 for p in valid_preds)
+                rw_present = any(p['class'] == 2 for p in valid_preds)
+                
+                period_lw.append(lw_present)
+                period_rw.append(rw_present)
+            
+            if period_lw:
+                lw_scores.extend(period_lw)
+            if period_rw:
+                rw_scores.extend(period_rw)
         
-        for action, intervals in action_intervals.items():
-            for start, end in intervals:
-                for bin_start in segment_intervals.keys():
-                    bin_end = bin_start + 30 * 15
-                    if start >= bin_start and end <= bin_end:
-                        segment_intervals[bin_start].append((action,start, end))
-                        break
+        # Calculate final scores
+        lw_score = sum(lw_scores) / len(lw_scores) if lw_scores else 0
+        rw_score = sum(rw_scores) / len(rw_scores) if rw_scores else 0
+        rv_score = sum(rv_scores) / len(rv_scores) if rv_scores else 0
         
-        for seg, actions in segment_intervals.items():
-            if not actions:
-                rwm += 1
-                lwm += 1
-                rvm += 1
-                mistake_sections.append((seg, seg + 450, f'No mirror checks, seconds {int(seg/15)} to {int(seg/15) + 30}'))
-                continue
-            actions = [a[0] for a in actions]
+        # Calculate overall score (you can adjust this formula as needed)
+        score -=  (1 - lw_score) * 20 + (1 - rw_score) * 20 + (1 - rv_score) * 20
 
-            if "Left Wing Mirror" not in actions:
-                lwm += 1
-            if "Right Wing Mirror" not in actions:
-                rwm += 1
-            if "Rearview Mirror" not in actions:
-                rvm += 1
+        scores = {
+            "lw_score": lw_score,
+            "rw_score": rw_score,
+            "rv_score": rv_score,
+            "idle_periods": idle_periods,
+            "score": score,
+            "active_periods": active_periods}
         
-        lwm_percent = round((lwm / len(segment_intervals)) * 100 , 4)
-        rwm_percent = round((rwm / len(segment_intervals)) * 100 , 4)
-        rvm_percent = round((rvm / len(segment_intervals)) * 100 , 4)
-
-        mp = int((num_mp_frames / num_frames) * 100 if num_frames > 0 else 0)
-        
-        score = round((lwm_percent + rwm_percent + rvm_percent) / 3, 4)
-
+        self.result['scores'] = scores
         
 
-        self.result['scores'] = (score, lwm_percent, rwm_percent, rvm_percent, mp)
-        frames = self.result['rgb']
-        frames = list(frames.values())
-        mistake_video_paths = []
-
-        for m in mistake_sections:
-            start, end, reason = m
-            mistake_frames = frames[start:end]
-            mistake_video_path = os.path.join(video_save_path, f'{reason}.mp4')
-            height, width, _ = mistake_frames[0].shape
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            video_writer = cv2.VideoWriter(mistake_video_path, fourcc, 15, (width, height))
-            for frame in mistake_frames:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                video_writer.write(rgb_frame)
-            video_writer.release()
-            mistake_video_paths.append(mistake_video_path)
+    def merge_overlapping_periods(self, periods):
+        """Merge overlapping time periods."""
+        if not periods:
+            return []
         
-        self.result['mistake_video_paths'] = mistake_video_paths
-        self.result['mistake_sections'] = mistake_sections
+        # Sort periods by start time
+        sorted_periods = sorted(periods, key=lambda x: x[0])
+        merged = [sorted_periods[0]]
+        
+        for current in sorted_periods[1:]:
+            last = merged[-1]
+            # If current period overlaps with the last merged period
+            if current[0] <= last[1]:
+                # Merge them by extending the end time
+                merged[-1] = (last[0], max(last[1], current[1]))
+            else:
+                # No overlap, add as new period
+                merged.append(current)
+        
+        return merged
+
+
+    def get_active_periods(self, driving_start, driving_end, idle_periods):
+        """
+        Calculate active driving periods by subtracting idle periods from total driving time.
+        
+        Args:
+            driving_start: Start frame of driving
+            driving_end: End frame of driving
+            idle_periods: List of (start, end) tuples for idle periods
+        
+        Returns:
+            List of (start, end) tuples for active driving periods
+        """
+        if not idle_periods:
+            return [(driving_start, driving_end)]
+        
+        active_periods = []
+        current_start = driving_start
+        
+        for idle_start, idle_end in idle_periods:
+            # Add active period before this idle period
+            if current_start < idle_start:
+                active_periods.append((current_start, idle_start))
+            
+            # Move start point to after this idle period
+            current_start = max(current_start, idle_end)
+        
+        # Add final active period if there's time remaining
+        if current_start < driving_end:
+            active_periods.append((current_start, driving_end))
+        
+        return active_periods
+
         
 
 
