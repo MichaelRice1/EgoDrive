@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-<img src="images_gifs/dash3.gif" alt="highlights" width="100%">
+<img src="images_gifs/dash4.gif" alt="highlights" width="100%">
 </p>
 
 
