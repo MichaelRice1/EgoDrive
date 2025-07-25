@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
- <img src="images_gifs/dash3.gif" width="98%" alt="Driver Training Dashboard Operation" />
+<img src="images_gifs/dash3.gif" alt="highlights" width="100%">
 </p>
 
 
