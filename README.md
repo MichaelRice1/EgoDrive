@@ -1,6 +1,5 @@
-# EgoDrive: An Egocentric, Multimodal Dataset and Methods for Driver Behavior Analysis
+# EgoDrive: An Egocentric, Multimodal Dataset and Methods for Driver Behavior Recognition
 
-EgoDrive: Multimodal Driver Behavior Recognition using Project Aria
 
 <p align="center">
  <img src="images_gifs/output3.gif" width="49%" alt="Annotated Dataset Samples" />
@@ -8,7 +7,7 @@ EgoDrive: Multimodal Driver Behavior Recognition using Project Aria
 </p>
 
 <p align="center">
- <img src="images_gifs/dashboard.gif" width="98%" alt="Driver Training Dashboard Operation" />
+ <img src="images_gifs/dash3.gif" width="98%" alt="Driver Training Dashboard Operation" />
 </p>
 
 
