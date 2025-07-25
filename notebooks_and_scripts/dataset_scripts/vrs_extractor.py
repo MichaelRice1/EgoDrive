@@ -1099,6 +1099,8 @@ class VRSDataExtractor():
 
         return blended, xmin, ymin, xmax, ymax
 
+    
+
     def evaluate_driving(self, processed, odr, video_save_path, progress_callback=None):
         """Enhanced version that creates montage-style mistake videos per category"""
         
@@ -1110,6 +1112,7 @@ class VRSDataExtractor():
         hands = processed['hands']
         gaze = processed['gaze']
 
+        
         action_counters = {
             'left wing mirror check': 0,
             'right wing mirror check': 0,
@@ -1136,14 +1139,14 @@ class VRSDataExtractor():
         # Initialize counters and trackers (ORIGINAL LOGIC)
         crossover_frame_count = 0
         hands_on_wheel = 0
-        gear_change_frame_counter = 0
-        gear_change_action_counter = 0
         threshold_frames = 10
         one_handed_driving_counter = 0
         bad_steering_counter = 0
         infotainment_distraction_counter = 0
         speedometer_checks = 0
         mobile_phone_counter = 0
+        mobile_phone_active = False
+        mobile_phone_frame_count = 0
 
         fixations = []
 
@@ -1160,28 +1163,19 @@ class VRSDataExtractor():
             'one_handed_driving': [],
             'infotainment_distraction': [],
             'mobile_phone_usage': [],  
-            'hand_crossover': [],
-            'gear_changes': []
+            'hand_crossover': []
         }
         
-        # State tracking for mistake detection
-        mistake_states = {
-            'one_handed': {'active': False, 'count': 0},
-            'infotainment': {'active': False, 'count': 0},
-            'mobile_phone': {'active': False, 'count': 0},
-            'crossover': {'active': False, 'count': 0},
-            'gear_change': {'active': False, 'count': 0}
-        }
 
         # Initialize original variables
         s = False
         oneh_count = 0
         info_count = 0
+        driving_frames_count = 0
         oneh = False
         info = False
+        mp = False
         
-        # ORIGINAL gear change state tracking
-        gear_change_state = "idle"
 
         # Process frames to create action_frames with labels
         for i, frame in enumerate(frames):
@@ -1190,6 +1184,16 @@ class VRSDataExtractor():
                 start = line['start']
                 end = line['end']
                 label = labels_map[str(line['class'])]
+
+                if label == 'driving':
+                    driving_frames_count += 1     
+                if label == 'mobile phone usage':
+                    mp = True
+
+                if mp == True and label != 'mobile phone usage':
+                    mobile_phone_counter += 1
+                    mp = False
+
                 colour = clr_map[label]
 
                 if start <= i < end:
@@ -1205,8 +1209,7 @@ class VRSDataExtractor():
                     cv2.putText(res, label, (x_center, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 1, colour, 3)
                     action_frames.append(res)
 
-                    if label == 'mobile phone usage':
-                        action_counters['mobile phone usage'] += 1
+                
 
                     if i == end - 1:
                         line_pointer += 1
@@ -1246,7 +1249,7 @@ class VRSDataExtractor():
                 prev_gaze = gaze[i - 1]
                 if g is not None and prev_gaze is not None:
                     distance = math.hypot(g[0] - prev_gaze[0], g[1] - prev_gaze[1])
-                    if distance < 0.1:
+                    if distance < 0.075:
                         gaze_fixation_duration += 1
                     else:
                         fixations.append(gaze_fixation_duration)
@@ -1261,6 +1264,8 @@ class VRSDataExtractor():
             frame_width = frame.shape[1]
             frame_height = frame.shape[0]
             hands_frame = frame_rgb.copy()
+
+            
 
             # Draw hand keypoints
             if not np.isnan(left_wrist[0]) and not np.isnan(left_wrist[1]):
@@ -1308,35 +1313,7 @@ class VRSDataExtractor():
                         hands_on_wheel += 1
                         frame = cv2.putText(frame, "Both Hands on Wheel", (25, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-            # ORIGINAL gear change detection logic
-            if (not np.isnan(right_wrist[0]) and not np.isnan(right_palm[0])
-                and np.isnan(left_wrist[0]) and np.isnan(left_palm[0])):
-                
-                if gear_change_state == "idle":
-                    gear_change_state = "right_only"
-                    gear_change_frame_counter = 1
-                elif gear_change_state == "right_only":
-                    gear_change_frame_counter += 1
-
-            elif not np.isnan(left_wrist[0]) or not np.isnan(left_palm[0]):
-                
-                if gear_change_state == "right_only":
-                    if 5 <= gear_change_frame_counter < 30:
-                        gear_change_action_counter += 1
-                        cv2.putText(frame, "Potential Gear Change Occurred", (25, 75),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                        
-                        # Add to mistake frames for montage
-                        mistake_frames['gear_changes'].append(frame.copy())
-                        
-                    gear_change_state = "idle"
-                    gear_change_frame_counter = 0
-
-            else:
-                # Reset state if neither condition is met for too long
-                if gear_change_state == "right_only" and gear_change_frame_counter >= 30:
-                    gear_change_state = "idle"
-                    gear_change_frame_counter = 0
+            
 
             # ORIGINAL bad steering detection (hand crossover)
             if not np.isnan(right_palm[0]) and not np.isnan(right_palm[1]) and not np.isnan(left_palm[0]) and not np.isnan(left_palm[1]):
@@ -1397,13 +1374,38 @@ class VRSDataExtractor():
                 
                 if current_pred_index is not None:
                     current_label = labels_map[str(preds[current_pred_index]['class'])]
+
                     if current_label == 'mobile phone usage':
-                        mobile_phone_counter += 1
-                        # Add to mistake frames for montage
+                        # Currently in mobile phone usage
+                        if not mobile_phone_active:
+                            # NEW chunk detected - increment counter
+                            mobile_phone_counter += 1
+                            mobile_phone_active = True
+                            mobile_phone_frame_count = 0
+                            print(f"Mobile phone usage chunk #{mobile_phone_counter} started at frame {i}")
+                        
+                        # Add frame to montage (for all frames in the chunk)
+                        mobile_phone_frame_count += 1
+                        cv2.putText(frame, f"Mobile Phone Usage - Chunk #{mobile_phone_counter}", (25, 200), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                         mistake_frames['mobile_phone_usage'].append(frame.copy())
+                        
+                    else:
+                        # Not mobile phone usage - end current chunk if active
+                        if mobile_phone_active:
+                            print(f"Mobile phone usage chunk #{mobile_phone_counter} ended. Duration: {mobile_phone_frame_count} frames ({mobile_phone_frame_count/15:.1f}s)")
+                            mobile_phone_active = False
+                            mobile_phone_frame_count = 0
+                else:
+                    # No prediction for current frame - end chunk if active
+                    if mobile_phone_active:
+                        print(f"Mobile phone usage chunk #{mobile_phone_counter} ended (no prediction). Duration: {mobile_phone_frame_count} frames ({mobile_phone_frame_count/15:.1f}s)")
+                        mobile_phone_active = False
+                        mobile_phone_frame_count = 0
+
 
             # ORIGINAL one-handed driving detection
-            if ((not np.isnan(right_wrist[0]) and not np.isnan(right_palm[0])) and (np.isnan(left_wrist[0]) or np.isnan(left_palm[0]))) or ((not np.isnan(left_wrist[0]) and not np.isnan(left_palm[0])) and (np.isnan(right_wrist[0]) or np.isnan(right_palm[0]))):
+            if ((not np.isnan(right_wrist[0]) and not np.isnan(right_palm[0])) and (np.isnan(left_wrist[0]) and np.isnan(left_palm[0]))) or ((not np.isnan(left_wrist[0]) and not np.isnan(left_palm[0])) and (np.isnan(right_wrist[0]) and np.isnan(right_palm[0]))):
                 
                 oneh = True
                 one_handed_driving_counter += 1
@@ -1437,12 +1439,13 @@ class VRSDataExtractor():
         # Calculate results
         mean_gaze_fixation_duration = np.mean(fixations) if fixations else 0
         self.result['mean_gaze_fixation_duration_sec'] = round(mean_gaze_fixation_duration / 15, 4)
-        self.result['one_handed_percent'] = round((one_handed_driving_counter - gear_change_frame_counter) / len(hands) * 100, 4)
-        self.result['crossover_percent'] = round(bad_steering_counter / len(hands) * 100, 4)
-        self.result['infotainment_distraction_percent'] = round(infotainment_distraction_counter / len(hands) * 100, 4)
-        self.result['mobile_phone_usage_percent'] = round(mobile_phone_counter / len(hands) * 100, 4)
+        self.result['one_handed_percent'] = round((one_handed_driving_counter) / len(hands) * 100, 4)
+        self.result['crossover_occurrences'] = bad_steering_counter
+        self.result['hands_on_wheel_percent'] = round(hands_on_wheel / driving_frames_count * 100, 4)
+        self.result['infotainment_distraction_count'] = info_count
         self.result['speedometer_checks'] = speedometer_checks
         self.result['action_counts'] = action_counters
+        self.result['mobile_phone_usage_count'] = mobile_phone_counter
         self.result['mistake_frames'] = mistake_frames
         self.result['mistake_videos'] = mistake_video_paths
         self.result['mistake_videos_directory'] = mistake_videos_dir
@@ -1450,8 +1453,7 @@ class VRSDataExtractor():
             'one_handed_driving_frames': len(mistake_frames['one_handed_driving']),
             'infotainment_distraction_frames': len(mistake_frames['infotainment_distraction']),
             'mobile_phone_usage_frames': len(mistake_frames['mobile_phone_usage']),
-            'hand_crossover_frames': len(mistake_frames['hand_crossover']),
-            'gear_change_frames': len(mistake_frames['gear_changes'])
+            'hand_crossover_frames': len(mistake_frames['hand_crossover'])
         }
         self.result['video_path'] = main_video_path
         self.result['overlays'] = overlays
@@ -1608,7 +1610,7 @@ class VRSDataExtractor():
             video_save_path: Path to save video (unused in current implementation)
             idle_class: Class ID for idle behavior (default: 4)
         """
-        score = 100
+        score = 1
         driving_start = 0
         driving_end = 0
         preds = results['preds']
@@ -1698,20 +1700,54 @@ class VRSDataExtractor():
                 rw_scores.extend(period_rw)
         
         # Calculate final scores
-        lw_score = sum(lw_scores) / len(lw_scores) if lw_scores else 0
-        rw_score = sum(rw_scores) / len(rw_scores) if rw_scores else 0
-        rv_score = sum(rv_scores) / len(rv_scores) if rv_scores else 0
+        lw_score = (sum(lw_scores) / len(lw_scores))
+        rw_score = (sum(rw_scores) / len(rw_scores)) 
+        rv_score = (sum(rv_scores) / len(rv_scores)) 
+
+
+        # mobile_score = (results['action_counts'].get('mobile phone usage', 0) / len(active_periods)) * 0.1
+
+        one_handed_score = (results['one_handed_percent'] / 100) * 0.015
+        
+        if results['crossover_occurrences'] == 0:
+            crossover_score = 0
+        elif results['crossover_occurrences'] > 0 and results['crossover_occurrences'] <= 10:
+            crossover_score = 0.025
+        else:
+            crossover_score = 0.05
+
+        if results['infotainment_distraction_count'] == 0:
+            infotainment_distraction_score = 0
+        elif results['infotainment_distraction_count'] > 0 and results['infotainment_distraction_count'] <= 5:
+            infotainment_distraction_score = 0.025
+        else:
+            infotainment_distraction_score = 0.05
+
+        if results['speedometer_checks'] == 0:
+            speedometer_score = 0.05
+        elif results['speedometer_checks'] > 0 and results['speedometer_checks'] <= 5:
+            speedometer_score = 0.025
+        else:
+            speedometer_score = 0
+
+        mobile_count = (results['action_counts'].get('mobile phone usage', 0))
+
+
         
         # Calculate overall score (you can adjust this formula as needed)
-        score -=  (1 - lw_score) * 20 + (1 - rw_score) * 20 + (1 - rv_score) * 20
-
+        score -= (((1-lw_score)*0.2) + ((1-rw_score)*0.2) + ((1-rv_score) * 0.25)  + (one_handed_score) + crossover_score + infotainment_distraction_score + speedometer_score)
+        
         scores = {
             "lw_score": lw_score,
             "rw_score": rw_score,
             "rv_score": rv_score,
+            "mobile_counts": mobile_count,
             "idle_periods": idle_periods,
             "score": score,
-            "active_periods": active_periods}
+            "one_handed_score": one_handed_score,
+            "crossover_score": crossover_score,
+            "infotainment_distraction_score": infotainment_distraction_score,
+            "speedometer_score": speedometer_score}
         
         self.result['scores'] = scores
         
