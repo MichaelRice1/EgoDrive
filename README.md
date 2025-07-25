@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-<img src="images_gifs/dashmp4.gif" alt="Driver Feedback Dashboard" width="100%">
+<img src="images_gifs/dash.gif" alt="Driver Feedback Dashboard" width="100%">
 </p>
 
 
