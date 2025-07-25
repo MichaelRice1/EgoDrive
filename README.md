@@ -4,7 +4,7 @@ EgoDrive: Multimodal Driver Behavior Recognition using Project Aria
 
 <p align="center">
  <img src="images_gifs/output3.gif" width="49%" alt="Annotated Dataset Samples" />
- <!-- <img src="images_gifs/final.gif" width="49%" alt="Predictions" /> -->
+ <img src="images_gifs/final2.gif" width="49%" alt="Predictions" />
 </p>
 
 <p align="center">
