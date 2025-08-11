@@ -264,10 +264,6 @@ class Predictor:
             hands = np.array(self.data['hands'][i:i+fpc])
             imu = np.array(self.data['imu'][i:i+fpc])
             objects = np.array(self.data['object_detections'][i:i+fpc])
-            # gaze = self.data['gaze'][i:i+fpc]
-            # hands = self.data['hands'][i:i+fpc]
-            # imu = self.data['imu'][i:i+fpc]
-            # objects = self.data['object_detections'][i:i+fpc]
 
 
 
