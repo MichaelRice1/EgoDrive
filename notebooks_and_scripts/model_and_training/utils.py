@@ -11,8 +11,17 @@ from lightning.pytorch.loggers import WandbLogger
 import wandb
 from trainer import EgoDriveClassifier
 
+
+
 class AriaMultimodalTrainDataset(Dataset):
+
+    """Dataset for the Aria multimodal training data.
+       Inherits from PyTorch's Dataset class."""
+
     def __init__(self, root_dir, transform=None):
+
+        """Initialize the dataset with the root directory and optional transform."""
+
         self.root_dir = root_dir
         self.actions = [f for f in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, f))]
         self.file_paths = []
@@ -47,12 +56,44 @@ class AriaMultimodalTrainDataset(Dataset):
             sample = self.transform(sample)
 
         return sample
-    
 
+class ModelWrapper(nn.Module):
 
+    """
+    Simple wrapper to make existing EgoDriveMultimodalTransformer compatible with the training phases
+    """
 
+    def __init__(self, base_model):
+        super().__init__()
+        self.base_model = base_model
+        
+    def forward(self, inputs: Dict[str, torch.Tensor], labels: Optional[torch.Tensor] = None, 
+                training_phase: str = 'multimodal'):
+        """
+        Wrapper forward that handles training_phase parameter
+        """
 
+        outputs = self.base_model(inputs)
+        
+        # If the model returns a tensor, wrap it in a dict
+        if isinstance(outputs, torch.Tensor):
+            outputs = {'logits': outputs}
+        
+        # Add loss computation if labels are provided
+        if labels is not None and 'logits' in outputs:
+            outputs['loss'] = F.cross_entropy(outputs['logits'], labels)
+            
+            # Add accuracy
+            with torch.no_grad():
+                predictions = outputs['logits'].argmax(dim=-1)
+                outputs['accuracy'] = (predictions == labels).float().mean()
+        
+        return outputs
+       
 def dict_transform(x):
+
+    """converts the dict to a format compatible with the model"""
+
     return {
         'frames': x['frames'], 
         'gaze': x['gaze'],
@@ -62,11 +103,10 @@ def dict_transform(x):
         'label': x['label_id']
     }
 
-
-
-
 def calculate_class_weights(dataset, num_classes=6):
+
     """Calculate class weights for imbalanced dataset"""
+
     class_counts = torch.zeros(num_classes)
     
     for i in range(len(dataset)):
@@ -85,6 +125,9 @@ def calculate_class_weights(dataset, num_classes=6):
     return class_weights
 
 def load_data(dataset):
+  
+  """Load data and split into train, validation, and test sets."""
+
   class_weights = calculate_class_weights(dataset)
 
   total_size = len(dataset)
@@ -100,46 +143,7 @@ def load_data(dataset):
   )
   
   return train_set, val_set, test_set, class_weights 
-
-
-
-class ModelWrapper(nn.Module):
-    """
-    Simple wrapper to make your existing EgoDriveMultimodalTransformer 
-    compatible with the training phases
-    """
-    def __init__(self, base_model):
-        super().__init__()
-        self.base_model = base_model
-        
-    def forward(self, inputs: Dict[str, torch.Tensor], labels: Optional[torch.Tensor] = None, 
-                training_phase: str = 'multimodal'):
-        """
-        Wrapper forward that handles training_phase parameter
-        """
-        # For now, just ignore training_phase and use standard forward
-        # This allows your existing model to work with the new training code
-        
-        # Call the base model's forward (which expects the dict input)
-        outputs = self.base_model(inputs)
-        
-        # If your model returns a tensor, wrap it in a dict
-        if isinstance(outputs, torch.Tensor):
-            outputs = {'logits': outputs}
-        
-        # Add loss computation if labels are provided
-        if labels is not None and 'logits' in outputs:
-            outputs['loss'] = F.cross_entropy(outputs['logits'], labels)
-            
-            # Add accuracy
-            with torch.no_grad():
-                predictions = outputs['logits'].argmax(dim=-1)
-                outputs['accuracy'] = (predictions == labels).float().mean()
-        
-        return outputs
     
-
-
 def train_single_phase(
     model,
     train_loader,
@@ -152,7 +156,7 @@ def train_single_phase(
     class_weights=None
 ):
     """
-    Train a single phase (useful for debugging or fine-tuning)
+    Train a single phase of the EgoDrive model.
     """
     
     

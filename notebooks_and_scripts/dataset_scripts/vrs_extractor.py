@@ -10,7 +10,6 @@ import pandas as pd
 import tqdm
 from ultralytics import YOLO
 from typing import Dict, List, Optional
-from filterpy.kalman import KalmanFilter
 from projectaria_tools.core import data_provider
 from projectaria_tools.core.sensor_data import TimeDomain, TimeQueryOptions
 from projectaria_tools.core.stream_id import StreamId
@@ -24,28 +23,32 @@ from projectaria_tools.core.mps.utils import (
 import sys
 sys.path.append('utilities')
 os.environ['YOLO_VERBOSE'] = 'False'
-sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts')
+sys.path.append('MSc_AI_Thesis/notebooks_and_scripts')
+from unused.OtherModelScripts import ego_blur
 from preds.Predictor import Predictor
 
 
 class VRSDataExtractor():
 
+    """Comprehensive Class to extract and process data from a VRS file for EgoDrive training."""
+
 
     def __init__(self, vrs_path: str):
+
         self.path = vrs_path
         self.provider = data_provider.create_vrs_data_provider(self.path)
         
-        self.time_domain = TimeDomain.DEVICE_TIME  # query data based on host time
-        self.option = TimeQueryOptions.CLOSEST # get data whose time [in TimeDomain] is CLOSEST to query time
+        self.time_domain = TimeDomain.DEVICE_TIME
+        self.option = TimeQueryOptions.CLOSEST 
         
         self.provider.set_devignetting(True)
-        self.provider.set_devignetting_mask_folder_path('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/utilities/devignetting_masks_bin')
+        self.provider.set_devignetting_mask_folder_path('MSc_AI_Thesis/utilities/devignetting_masks_bin')
         
         self.device_calibration = self.provider.get_device_calibration()
         self.rgb_camera_calibration = self.device_calibration.get_camera_calib('camera-rgb')
 
 
-
+        # Stream ID to label mappings
         self.stream_mappings = {
             "camera-slam-left": StreamId("1201-1"),
             "camera-slam-right":StreamId("1201-2"),
@@ -58,11 +61,14 @@ class VRSDataExtractor():
             "imu-left":StreamId("1202-2")
         }
 
+        # Stream IDs for specific streams
         self.stream_ids: Dict[str, StreamId] = {
                 "rgb": StreamId("214-1"),
                 "slam-left": StreamId("1201-1"),
                 "slam-right": StreamId("1201-2")
                 }
+        
+        # Initialize stream IDs from mappings
         self.stream_labels: Dict[str, str] = {
             key: self.provider.get_label_from_stream_id(stream_id)
             for key, stream_id in self.stream_ids.items()}
@@ -79,6 +85,8 @@ class VRSDataExtractor():
         except:
             self.rgb_start_time = 0
         self.result = {}
+
+        #paths for ego-blur models
         self.face_ego_blur = "models/ego_blur_face.jit"
         self.lp_ego_blur = "models/ego_blur_lp.jit"
         rgblabel = 'camera-rgb'
@@ -200,30 +208,6 @@ class VRSDataExtractor():
                 print(f"Extracted {len(self.result['slam_right'])} images from {right_slam_label} stream")
             except:
                 print("Error extracting slam images, likely not present in VRS file ")
-
-    def create_kalman_filter(self):
-        kf = KalmanFilter(dim_x=4, dim_z=2)
-
-        # State vector: [x, y, vx, vy]
-        # Measurement: [x, y]
-        dt = 1.0  # time step
-
-        # Transition matrix (motion model)
-        kf.F = np.array([[1, 0, dt, 0],
-                        [0, 1, 0, dt],
-                        [0, 0, 1, 0 ],
-                        [0, 0, 0, 1 ]])
-
-        # Measurement function
-        kf.H = np.array([[1, 0, 0, 0],
-                        [0, 1, 0, 0]])
-
-        
-        kf.P *= 1000. 
-        kf.Q *= 0.01
-        kf.R *= 5
-
-        return kf
     
     def get_gaze_data(self, gaze_path:str,personalized_gaze_path:str, start_index=0, end_index=None):
 
@@ -239,7 +223,6 @@ class VRSDataExtractor():
         gaze_cpf = mps.read_eyegaze(gaze_path)
         if personalized_gaze_path:
             personalized_gaze_cpf = mps.read_eyegaze(personalized_gaze_path)
-        # handwrist_points  = mps.hand_tracking.read_wrist_and_palm_poses(hand_path)
         
 
         if start_index == 0 and end_index == None:
@@ -251,9 +234,7 @@ class VRSDataExtractor():
             et_ts = [gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
             if personalized_gaze_path:
                 p_et_ts = [personalized_gaze_cpf[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
-            #hw_ts = [handwrist_points[i].tracking_timestamp.total_seconds() * 1e9 for i in range(start_index,end_index)]
 
-            # self.result['gaze_projected'] = project_gaze(gaze_path, self.path)
         for ts in et_ts:
             gaze_point = get_nearest_eye_gaze(gaze_cpf, ts)
 
@@ -334,36 +315,24 @@ class VRSDataExtractor():
             else:
                 last_valid = z
         print(f"Extracted {len(p_gaze_points)} personalized gaze points")
-        smoothed_gaze = []
-
-        # gaze = [g[0]['projection']*(512/1408) for g in gaze]
-
-        kf = self.create_kalman_filter()
-
-        if len(p_gaze_points) == 0:
-            kf.x = np.array([[gaze_points[0][0]], [gaze_points[0][1]], [0], [0]])  # Initialize with first point
-        else:
-            kf.x = np.array([[p_gaze_points[0][0]], [p_gaze_points[0][1]], [0], [0]])
-
-        for i, z in enumerate(p_gaze_points):
-            if z is None:
-                z = p_gaze_points[i-1]  # Use the last valid point if current is None
-            kf.predict()
-            kf.update(np.array(z))
-            smoothed_gaze.append((kf.x[0, 0], kf.x[1, 0]))
-        print(f"Extracted {len(smoothed_gaze)} smoothed gaze points")   
-        self.result['smoothed_gaze'] = smoothed_gaze
-
+        
     def get_hand_point_reprojection(self, point_position_device: np.array, key: str) -> Optional[np.array]:
+
+        """Reprojects a 3D point from device coordinates to pixel coordinates using the camera calibration."""
+
         point_position_camera = self.get_T_device_sensor(key).inverse() @ point_position_device
         point_position_pixel = self.camera_calibrations[key].project(point_position_camera)
         return point_position_pixel
     
     def get_T_device_sensor(self, key: str):
+
+        """Returns the transformation from device to sensor coordinates for a given stream label."""
+
         return self.device_calibration.get_transform_device_sensor(self.stream_labels[key])
 
     def get_landmark_pixels(self, key: str, hand_tracking_result: mps.hand_tracking.HandTrackingResult) -> np.array:
-    
+        
+        """Gets the landmark pixels for the left and right hands from the hand tracking result."""
 
         left_wrist = None
         left_palm = None
@@ -480,6 +449,7 @@ class VRSDataExtractor():
         '''
         Extracts hand and wrist poses from the VRS file based on the index/time domain. The hand and wrist poses are extracted from the following streams:
         - camera-eyetracking
+        Landmarks are extracted and reprojected to pixel coordinates.
         '''
 
         hand_tracking_results = mps.hand_tracking.read_hand_tracking_results(hand_path)
@@ -532,6 +502,13 @@ class VRSDataExtractor():
         self.result['hand_landmarks'] = hand_landmarks
 
     def get_slam_data(self, slam_path:str, start_index=0, end_index=None):
+        
+        ''' Extracts SLAM data from the VRS file based on the index/time domain. The SLAM data is extracted from the following streams:
+        - camera-slam-left
+        - camera-slam-right
+        The SLAM data can include open loop and closed loop trajectories, which are stored in CSV files.
+        '''
+
 
         open_loop_points = {}
         closed_loop_points = {}
@@ -634,9 +611,10 @@ class VRSDataExtractor():
 
     def get_IMU_data(self, start_index=0, end_index=None):
 
-        '''
-        Extracts all IMU data from the VRS file
-        '''
+        ''' Extracts IMU data from the VRS file based on the index/time domain. The IMU data is extracted from the following streams:
+        - imu-right
+        - imu-left
+        The IMU data only retrieves acceleration and gyroscope readings, not magnetometer data.'''
 
     
         imu_right, imu_left = {},{}
@@ -692,6 +670,9 @@ class VRSDataExtractor():
 
     def get_GPS_data(self, start_index=0, end_index=None):
 
+        ''' Extracts GPS data from the VRS file based on the index/time domain. The GPS data is extracted from the following streams:
+        - gps '''
+
         num_gps = self.provider.get_num_data(self.provider.get_stream_id_from_label('gps'))
         gps_ts = self.provider.get_timestamps_ns(self.stream_mappings['gps'], self.time_domain)
 
@@ -702,6 +683,7 @@ class VRSDataExtractor():
         for index in range(start_index, end_index):
             gps_point = self.provider.get_gps_data_by_index(self.stream_mappings['gps'], index)
 
+            # gps data labels 
             p = {
                     "accuracy": gps_point.accuracy,
                     "altitude": gps_point.altitude,
@@ -722,7 +704,7 @@ class VRSDataExtractor():
     def ego_blur(self, input_labels:str, frames):
 
         '''
-        Apply ego-blur to the extracted images from the VRS file to make data anonymous
+        Apply ego-blur to extracted images from a VRS file to make data anonymous
         '''
 
         egoblur_face_path = self.face_ego_blur
@@ -824,6 +806,10 @@ class VRSDataExtractor():
         return frame
     
     def annotate(self, frames_dict, actions_csv_path, blur_csv_path, fps=15):
+
+        """ Fully Immersive Annotation of frames with actions and blur labels."""
+
+
         action_label_map = {
             '1': 'checking right wing mirror',
             '2': 'checking left wing mirror',
@@ -987,7 +973,9 @@ class VRSDataExtractor():
             cv2.destroyAllWindows()
 
     def _handle_frame_advance(self, sorted_ts, start_idx, count, output_csv, label_face, label_lp):
+
         """Records labels for all frames passed during advance"""
+
         labels = []
         if label_face: labels.append('face')
         if label_lp: labels.append('license_plate')
@@ -1009,8 +997,10 @@ class VRSDataExtractor():
         print(f"Data saved to {output_path}")
 
     def get_object_dets(self, progress_callback=None):
+        
         '''
-        Get automotive object detection results from the VRS file
+        Get all object detection results from the images from a singular driving session using a pre-trained YOLO model.
+        Our model is trained on a custom dataset of in-cabin objects.
         '''
 
         
@@ -1025,7 +1015,7 @@ class VRSDataExtractor():
             7: 'Steering Wheel'
         }
         
-        model_weight_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/models/InCabinObjectDet.pt'
+        model_weight_path = 'MSc_AI_Thesis/models/InCabinObjectDet.pt'
         model = YOLO(model_weight_path)
         results = []
         device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
@@ -1047,7 +1037,8 @@ class VRSDataExtractor():
                             'bounding_box': result[0].boxes.xyxy[j]
                         })
                         
-                        
+                        # frame saving for object detection training etc. 
+
                         # rand = random.random()
                         # if rand < 0.01:
                         #     rgb = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -1062,50 +1053,13 @@ class VRSDataExtractor():
 
         self.result['object_detections'] = results
 
-    def generate_gaussian_mask(self, shape, center, sigma=20):
-        x = np.arange(0, shape[1])
-        y = np.arange(0, shape[0])
-        x, y = np.meshgrid(x, y)
-        d = np.sqrt((x - center[0])**2 + (y - center[1])**2)
-        g = np.exp(-(d**2 / (2.0 * sigma**2)))
-        return g
-
-    def overlay_gaze_heatmap(self, frame, center, angle_error, threshold=0.05):
-        h, w = frame.shape[:2]
-        fov = 110
-
-        pix_per_deg = w / fov
-        radius = int(angle_error * pix_per_deg)
-        xmin = max(0, center[0] - radius)
-        ymin = max(0, center[1] - radius)
-        xmax = min(w - 1, center[0] + radius)
-        ymax = min(h - 1, center[1] + radius)
-
-        sigma = radius / 2
-        mask = self.generate_gaussian_mask((h, w), center, sigma)
-
-        # Apply a threshold to keep only visible regions
-        mask = (mask * 255).astype(np.uint8)
-        _, mask_thresh = cv2.threshold(mask, int(threshold * 255), 255, cv2.THRESH_BINARY)
-
-        # Create color heatmap
-        heatmap_color = cv2.applyColorMap(mask, cv2.COLORMAP_JET)
-
-
-        # Blend only the gaze region
-        mask_bool = mask_thresh > 0
-        blended = frame.copy()
-        blended[mask_bool] = cv2.addWeighted(frame, 0.5, heatmap_color, 0.5, 0)[mask_bool]
-
-        return blended, xmin, ymin, xmax, ymax
-
-    
-
     def evaluate_driving(self, processed, odr, video_save_path, progress_callback=None):
-        """Enhanced version that creates montage-style mistake videos per category"""
+
+        """Full method for evaluating driving behavior based on processed data.
+        This method acquires models predictions and generates a video with annotations."""
         
+
         overlays = []
-        result = {}
 
         frames = processed['frames']
         object_dets = processed['object_detections']
@@ -1136,7 +1090,7 @@ class VRSDataExtractor():
             'mobile phone usage': (0, 255, 255)
         }
 
-        # Initialize counters and trackers (ORIGINAL LOGIC)
+        # behaviour and frame counters
         crossover_frame_count = 0
         hands_on_wheel = 0
         threshold_frames = 10
@@ -1148,9 +1102,12 @@ class VRSDataExtractor():
         mobile_phone_active = False
         mobile_phone_frame_count = 0
 
+
+        #gaze fixations
         fixations = []
 
-        # Get predictions
+
+        # model action predictions with 0.5 overlap and 32 frames per class
         p = Predictor(data=processed)
         preds = p.run(overlap=0.5, fpc=32)
         self.result['preds'] = preds
@@ -1158,7 +1115,7 @@ class VRSDataExtractor():
         line_pointer = 0
         action_frames = []
 
-        # Enhanced mistake tracking - MONTAGE STYLE (collect all frames per category)
+        # frame colection per mistake
         mistake_frames = {
             'one_handed_driving': [],
             'infotainment_distraction': [],
@@ -1167,7 +1124,7 @@ class VRSDataExtractor():
         }
         
 
-        # Initialize original variables
+        # Initialize variables
         s = False
         oneh_count = 0
         info_count = 0
@@ -1218,6 +1175,7 @@ class VRSDataExtractor():
                     colour_correction = cv2.cvtColor(resized_frame, cv2.COLOR_RGB2BGR)
                     res = cv2.copyMakeBorder(colour_correction, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=(128, 128, 128))
                     action_frames.append(res)
+
 
         # Create main video writer and mistake video directory
         if not os.path.exists(video_save_path):
@@ -1466,7 +1424,9 @@ class VRSDataExtractor():
                 print(f"{mistake_type}: {frame_count} frames")
         
     def create_montage_video(self, frames_list, output_path, mistake_type):
+
         """Create a montage-style video containing all frames of a specific mistake type"""
+
         if not frames_list:
             return
         
@@ -1487,7 +1447,9 @@ class VRSDataExtractor():
         print(f"Created montage video: {output_path} ({len(frames_list)} frames)")
 
     def create_mistake_title_frame(self,mistake_type, frame_size, frame_count):
+
         """Create a title frame for the mistake montage video"""
+
         width, height = frame_size
         title_frame = np.zeros((height, width, 3), dtype=np.uint8)
         
@@ -1511,111 +1473,20 @@ class VRSDataExtractor():
         
         return title_frame
 
-    def draw_landmarks_and_connections(self, image, left_landmarks, right_landmarks, connections):
-        def draw_point(img, point, color):
-            cv2.circle(img, (int(point[0]), int(point[1])), 5, color, -1)
-
-        def draw_line(img, point1, point2, color):
-            cv2.line(img, (int(point1[0]), int(point1[1])), (int(point2[0]), int(point2[1])), color, 2)
-
-        if left_landmarks:
-            for left_landmark in left_landmarks:
-                if left_landmark is not None:
-                    draw_point(image, left_landmark, (255, 0, 0))  # Blue for left landmarks
-            for connection in connections:
-                if left_landmarks[int(connection[0])] is not None and left_landmarks[int(connection[1])] is not None:
-                    draw_line(image, left_landmarks[int(connection[0])], left_landmarks[int(connection[1])], (255, 0, 0))
-
-        if right_landmarks:
-            for right_landmark in right_landmarks:
-                if right_landmark is not None:
-                    draw_point(image, right_landmark, (0, 0, 255))  # Red for right landmarks
-            for connection in connections:
-                if right_landmarks[int(connection[0])] is not None and right_landmarks[int(connection[1])] is not None:
-                    draw_line(image, right_landmarks[int(connection[0])], right_landmarks[int(connection[1])], (0, 0, 255))
-
-        return image
-
-    def plot_wrists_and_palms(self, plt,left_wrist,left_palm,right_wrist,right_palm,left_wrist_normal_tip,left_palm_normal_tip,right_wrist_normal_tip,right_palm_normal_tip,img_height):
-        
-        def plot_point(point, color):
-            plt.plot(img_height - 0.5 - point[1], point[0] + 0.5, ".", c=color, mew=1, ms=15)
-
-        def plot_arrow(point, vector, color):
-            plt.arrow(img_height - 0.5 - point[1], point[0] + 0.5, -vector[1], vector[0], color=color)
-
-        if left_wrist is not None:
-            plot_point(left_wrist, "blue")
-        if left_palm is not None:
-            plot_point(left_palm, "blue")
-        if right_wrist is not None:
-            plot_point(right_wrist, "red")
-        if right_palm is not None:
-            plot_point(right_palm, "red")
-        if left_wrist_normal_tip is not None and left_wrist is not None:
-            plot_arrow(left_wrist, left_wrist_normal_tip - left_wrist, "blue")
-        if left_palm_normal_tip is not None and left_palm is not None:
-            plot_arrow(left_palm, left_palm_normal_tip - left_palm, "blue")
-        if right_wrist_normal_tip is not None and right_wrist is not None:
-            plot_arrow(right_wrist, right_wrist_normal_tip - right_wrist, "red")
-        if right_palm_normal_tip is not None and right_palm is not None:
-            plot_arrow(right_palm, right_palm_normal_tip - right_palm, "red")
-
-    def join_action_interval(self, action_tracking):
-        joined_actions = {}
-        
-        for action, frames in action_tracking.items():
-            if not frames:
-                continue
-            
-            # Sort frames and join consecutive intervals
-            frames = sorted(frames)
-            intervals = []
-            start = frames[0]
-            end = frames[0]
-            
-            for f in frames[1:]:
-                if f == end + 1:  # Consecutive frame
-                    end = f
-                else:
-                    if action == "Mobile Phone":
-                        if intervals:
-                            if start > intervals[-1][1] + 10:
-                                intervals.append([start, end])
-                            else:
-                                intervals[-1][1] = end 
-                        else:
-                            intervals.append([start, end])
-                    else:
-                        if (end - start) > 5:
-                            intervals.append([start, end])
-
-                    start = f
-                    end = f
-
-             # Extend last interval to include the last frame
-            intervals.append((start, end))  # Add last interval
-            joined_actions[action] = intervals
-        
-        return joined_actions        
-
     def score_driver(self, results, idle_class=4):
+
         """
-        Score the driving based on detected actions.
-        Returns an overall score between 0 and 1, as well as other statistics.
-        Resets scoring during idle periods where no mirror checks are required.
-        
-        Args:
-            results: Dictionary containing 'preds' with prediction data
-            video_save_path: Path to save video (unused in current implementation)
-            idle_class: Class ID for idle behavior (default: 4)
+        Score the driving based on detected actions and scores.
+        Returns a variety of scores including the overall driving score.
         """
+
         score = 1
         driving_start = 0
         driving_end = 0
         preds = results['preds']
         fps = 15
         
+
         # Find the first and last occurrence of driving (label == 3)
         for pred in preds:
             if pred['class'] == 3:
@@ -1651,6 +1522,7 @@ class VRSDataExtractor():
             print("No active driving periods found (all time was idle)")
             return 0, {"lw_score": 0, "rw_score": 0, "rv_score": 0, "idle_periods": idle_periods}
         
+
         # Calculate scores only for active driving periods
         rv_seg_size = 10  # seconds
         wing_seg_size = 30  # seconds
@@ -1663,7 +1535,6 @@ class VRSDataExtractor():
         for period_start, period_end in active_periods:
             period_frames = period_end - period_start
             
-            # Rearview mirror scoring for this period
             num_rv_segs = math.ceil(period_frames / (rv_seg_size * fps))
             period_rv = []
             
@@ -1751,9 +1622,10 @@ class VRSDataExtractor():
         
         self.result['scores'] = scores
         
-
     def merge_overlapping_periods(self, periods):
+
         """Merge overlapping time periods."""
+
         if not periods:
             return []
         
@@ -1773,19 +1645,12 @@ class VRSDataExtractor():
         
         return merged
 
-
     def get_active_periods(self, driving_start, driving_end, idle_periods):
+
         """
         Calculate active driving periods by subtracting idle periods from total driving time.
-        
-        Args:
-            driving_start: Start frame of driving
-            driving_end: End frame of driving
-            idle_periods: List of (start, end) tuples for idle periods
-        
-        Returns:
-            List of (start, end) tuples for active driving periods
         """
+
         if not idle_periods:
             return [(driving_start, driving_end)]
         

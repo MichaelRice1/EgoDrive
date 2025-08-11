@@ -7,10 +7,18 @@ from notebooks_and_scripts.dataset_scripts.vrs_extractor import VRSDataExtractor
 
 
 class DatasetAnnotator:
+
+    """Class to annotate dataset folders with gaze and hand tracking data."""
+
+
     def __init__(self, base_path):
         self.base_path = base_path
 
     def process_folder(self, folder):
+
+        """Annotate a specified folder with displayed gaze data into action and blurring CSV files."""
+
+
         actions_csv_path = os.path.join(base_path, folder, 'actions.csv')
         blur_csv_path = os.path.join(base_path, folder, 'blur.csv')
         vrs_path = os.path.join(base_path, folder, f"{folder}.vrs")

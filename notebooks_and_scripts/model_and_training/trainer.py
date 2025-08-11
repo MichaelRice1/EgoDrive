@@ -1,16 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-import lightning as L
-import os
-import matplotlib.pyplot as plt
-import os
-import numpy as np
-import torch
-import wandb
-import torch
-import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import lightning as L
@@ -20,13 +9,23 @@ import wandb
 from torchmetrics import Accuracy, Precision, Recall, F1Score, AUROC, ConfusionMatrix
 import os
 import numpy as np
-import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Any
+from datetime import datetime
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
+
+# Training Classifier inspired by https://github.com/facebookresearch/reading_in_the_wild.
+
+
 class WarmupScheduler(_LRScheduler):
+
+    """A learning rate scheduler that implements a warmup phase.
+    The learning rate increases linearly from 0 to the initial learning rate over a specified number of warmup steps.
+    After the warmup phase, it remains constant.
+    """
+
     def __init__(self, optimizer, warmup_steps, last_epoch=-1):
         self.warmup_steps = warmup_steps
         super(WarmupScheduler, self).__init__(optimizer, last_epoch)
@@ -38,6 +37,12 @@ class WarmupScheduler(_LRScheduler):
 
 
 class EgoDriveClassifier(L.LightningModule):
+
+    """Lightning Module for EgoDrive classification tasks.
+    Handles multimodal training.
+    """
+
+
     def __init__(
         self, 
         model, 
@@ -45,11 +50,13 @@ class EgoDriveClassifier(L.LightningModule):
         lr=1e-4, 
         use_loss_weight=False, 
         loss_weight=None,
-        training_phase='multimodal',  # 'multimodal', 'hallucination', 'rgb_only'
+        training_phase='multimodal', 
         use_multi_task=False,
         warmup_steps=500,
         weight_decay=1e-5
     ):
+        
+
         super().__init__()
         self.model = model
         self.lr = lr
@@ -103,11 +110,10 @@ class EgoDriveClassifier(L.LightningModule):
         self.best_val_loss = float('inf')
         
     def forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """Forward pass handling different training phases"""
-        # Extract labels if present
+
+        """Forward pass handling training phases"""
+
         labels = batch.get('label', None)
-        
-        # Remove label from input dict if present
         input_data = {k: v for k, v in batch.items() if k != 'label'}
         
         # Forward through model with appropriate training phase
@@ -116,14 +122,18 @@ class EgoDriveClassifier(L.LightningModule):
         return outputs
     
     def extract_logits(self, outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+
         """Extract logits from model output dictionary"""
+
         if self.training_phase == 'multimodal':
             return outputs.get('teacher_logits', outputs.get('logits'))
         else:
             return outputs['logits']
     
     def compute_loss(self, outputs: Dict[str, torch.Tensor], labels: torch.Tensor) -> torch.Tensor:
+
         """Compute loss based on training phase"""
+
         if 'loss' in outputs:
             # Model already computed the loss
             return outputs['loss']
@@ -134,17 +144,16 @@ class EgoDriveClassifier(L.LightningModule):
         
         # Add auxiliary losses if available
         total_loss = ce_loss
-        
-        if self.training_phase == 'hallucination' and 'hallucination_losses' in outputs:
-            for loss_name, loss_val in outputs['hallucination_losses'].items():
-                total_loss += 0.1 * loss_val  # Weight hallucination losses
-                
+            
         if 'kd_loss' in outputs:
             total_loss += outputs['kd_loss']
             
         return total_loss
     
     def training_step(self, batch, batch_idx):
+
+        """Training step for EgoDriveClassifier"""
+
         outputs = self.forward(batch)
         target = batch['label']
         
@@ -157,10 +166,6 @@ class EgoDriveClassifier(L.LightningModule):
         acc = self.accuracy(pred, target)
         self.log("train_acc", acc, prog_bar=True)
         
-        # Log additional metrics for different phases
-        if self.training_phase == 'hallucination' and 'hallucination_losses' in outputs:
-            for loss_name, loss_val in outputs['hallucination_losses'].items():
-                self.log(f"train_{loss_name}", loss_val)
                 
         if 'modality_weights' in outputs:
             for i, weight in enumerate(outputs['modality_weights']):
@@ -171,6 +176,9 @@ class EgoDriveClassifier(L.LightningModule):
         return loss
     
     def validation_step(self, batch, batch_idx):
+
+        """Validation step for EgoDriveClassifier"""
+
         outputs = self.forward(batch)
         target = batch['label']
         
@@ -189,6 +197,9 @@ class EgoDriveClassifier(L.LightningModule):
         return loss
     
     def test_step(self, batch, batch_idx):
+
+        """Test step for EgoDriveClassifier"""
+
         outputs = self.forward(batch)
         target = batch['label']
         
@@ -201,12 +212,17 @@ class EgoDriveClassifier(L.LightningModule):
         self.auroc.update(preds=pred_probs, target=target)
         
     def predict_step(self, batch, batch_idx):
+
+        """Prediction step for EgoDriveClassifier"""
+        
         outputs = self.forward(batch)
         logits = self.extract_logits(outputs)
         return F.softmax(logits, dim=-1)
     
     def log_confusion_matrix(self, confmat, stage='val'):
+
         """Log confusion matrix as both table and heatmap"""
+
         # Normalize confusion matrix
         confmat_norm = (confmat.float() / confmat.sum(dim=1, keepdim=True)).cpu()
         confmat_norm[torch.isnan(confmat_norm)] = 0
@@ -255,6 +271,9 @@ class EgoDriveClassifier(L.LightningModule):
         # self.log(key=f"{stage}_conf_mat_table", columns=columns, data=data)
     
     def on_validation_epoch_end(self):
+
+        """Validation epoch end to compute and log metrics"""
+
         avg_loss = self.val_loss.compute()
         preds = self.val_pred.compute()
         targets = self.val_label.compute()
@@ -283,7 +302,7 @@ class EgoDriveClassifier(L.LightningModule):
         }
         self.log_dict(values, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         
-        # Log per-class metrics
+
         for i, class_name in enumerate(self.class_names):
             acc_i = per_class_acc[i].item()
             prec_i = per_class_prec[i].item()
@@ -293,18 +312,9 @@ class EgoDriveClassifier(L.LightningModule):
             self.log(f"val_prec_{class_name}", prec_i)
             self.log(f"val_rec_{class_name}", rec_i)
 
-            # Debugging rear view mirror precision anomaly
-            # if class_name == "idle":
-            #     print(f"[DEBUG] Class '{class_name}' - idx {i}")
-            #     print(f"[DEBUG] Accuracy: {acc_i:.4f}, Precision: {prec_i:.4f}, Recall: {rec_i:.4f}")
-            #     cm = self.confmat.compute()
-            #     print(f"[DEBUG] Confusion matrix row (true={i}): {cm[i].tolist()}")
-            #     print(f"[DEBUG] Confusion matrix col (pred={i}): {[cm[j, i].item() for j in range(len(self.class_names))]}")
         
-        # Log confusion matrix
         self.log_confusion_matrix(confmat, stage='val')
         
-        # Track best model
         if val_acc > self.best_val_acc:
             self.best_val_acc = val_acc
             self.log("best_val_acc", self.best_val_acc)
@@ -328,6 +338,9 @@ class EgoDriveClassifier(L.LightningModule):
         self.per_class_recall.reset()
     
     def on_test_epoch_end(self):
+
+        """Test epoch end to compute and log comprehensive results"""
+
         preds = self.test_pred.compute()
         targets = self.test_label.compute()
         
@@ -400,12 +413,11 @@ class EgoDriveClassifier(L.LightningModule):
             test_results['diagnostics']['nan_count'] = nan_count
             test_results['diagnostics']['has_nan'] = nan_count > 0
         
-        # Save results to file
-        import pickle
-        from datetime import datetime
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f'test_results_{timestamp}.txt'
         
+        # Save comprehensive results to a text file
         with open(filename, 'w') as f:
             f.write(f"=== COMPREHENSIVE TEST RESULTS ===\n")
             f.write(f"Timestamp: {timestamp}\n")
@@ -416,7 +428,7 @@ class EgoDriveClassifier(L.LightningModule):
             f.write(f"Test Recall: {test_recall:.4f}\n")
             f.write(f"Test F1 Score: {test_f1score:.4f}\n\n")
             
-            # Diagnostic information
+
             f.write(f"=== DIAGNOSTICS ===\n")
             if test_results['diagnostics']['single_class_prediction']:
                 f.write(f"WARNING: Model only predicts class {test_results['diagnostics']['predicted_class_if_single']} ({self.class_names[test_results['diagnostics']['predicted_class_if_single']]})\n")
@@ -456,7 +468,7 @@ class EgoDriveClassifier(L.LightningModule):
                     row.append(f"{confmat_norm[i, j]:.3f}")
                 f.write("\t".join(row) + "\n")
         
-        # Log to wandb (your existing logging)
+        # Log to wandb
         values = {
             "test_auc": test_auc,
             "test_precision": test_precision,
@@ -530,15 +542,7 @@ class EgoDriveClassifier(L.LightningModule):
         print(f"Prediction distribution: {test_results['distributions']['predictions']}")
         print(f"Target distribution: {test_results['distributions']['targets']}")
         
-        # Log additional insights for driving behaviors (your commented code)
-        # phone_recall = per_class_rec[1] # Mobile phone use
-        # self.log("test_phone_detection_recall", phone_recall)
-        # 
-        # # Log mirror check performance
-        # mirror_recalls = [per_class_rec[2], per_class_rec[3], per_class_rec[4]]
-        # avg_mirror_recall = sum(mirror_recalls) / len(mirror_recalls)
-        # self.log("test_mirror_check_avg_recall", avg_mirror_recall)
-        
+
         # Reset metrics
         self.test_pred.reset()
         self.test_label.reset()
@@ -558,33 +562,20 @@ class EgoDriveClassifier(L.LightningModule):
             self.batch_info.clear()
     
     def configure_optimizers(self):
-        # Different optimizer configs for different training phases
-        # Start with very low LR to prevent early collapse
+
+        """Configure optimizers and schedulers """
 
         if self.training_phase == 'multimodal':
             optimizer = optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        elif self.training_phase == 'hallucination':
-            # Only optimize hallucinator and classifier
-            params = []
-            for name, param in self.model.named_parameters():
-                if 'hallucinator' in name or 'classifier' in name:
-                    params.append(param)
-            optimizer = optim.AdamW(params, lr=self.lr * 0.5, weight_decay=self.weight_decay)
-        else:  # rgb_only
-            # Only optimize classifier
-            params = []
-            for name, param in self.model.named_parameters():
-                if 'classifier' in name:
-                    params.append(param)
-            optimizer = optim.AdamW(params, lr=self.lr * 0.1, weight_decay=self.weight_decay)
         
-        # Scheduler
         scheduler = WarmupScheduler(optimizer, warmup_steps=self.warmup_steps)
         
         return [optimizer], [{'scheduler': scheduler, 'interval': 'step'}]
     
     def on_train_epoch_end(self):
+
         """Log training phase info"""
+        
         self.log("training_phase", 
                  {"multimodal": 0, "hallucination": 1, "rgb_only": 2}[self.training_phase])
 

@@ -1,32 +1,31 @@
-
-
-
 import os 
 import sys
 import sys
 import cv2
 import numpy as np
-sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts')
+sys.path.append('MSc_AI_Thesis/notebooks_and_scripts')
 from dataset_scripts.vrs_extractor import VRSDataExtractor
 from dataset_scripts.Aligner import EgoDriveAriaAligner
 import pandas as pd
 from projectaria_tools.core.mps import EyeGaze
 from projectaria_tools.core.mps.utils import get_gaze_vector_reprojection
-
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0' 
 
-class DataProcessor:
 
-    def __init__(self, base_data_path = None):
-        pass
+
+class DataProcessor:
     
     def process_object_detections_with_gaze(self, detections, gaze_point):
+
         """
-        Enhanced object features including gaze-relative information
-        Features per object: [presence, x, y, width, height, gaze_intersects, gaze_distance]
+        Produces object detection's fixed length feature vectors, for a subset of objects.
+        Features per object: [presence, x, y, width, height]
         """
+
+
         target_objects = ['Right Wing Mirror', 'Left Wing Mirror', 'Rearview Mirror', 
                         'Mobile Phone']
+        
         features = np.zeros(20)  # 4 objects × 5 features each
         
         if gaze_point is not None and len(gaze_point) >= 2:
@@ -45,6 +44,7 @@ class DataProcessor:
             if obj_class in classes:
                 
                 entry = next((d for d in detections if d.get('class') == obj_class), None)
+
                 # Standard object features
                 bbox = entry.get('bounding_box', {})
                 x = bbox[0]
@@ -75,6 +75,8 @@ class DataProcessor:
         return features
     
     def preprocess(self, aligned):
+
+        """ Preprocesses the aligned data for training, extracting and normalizing frames, gaze, hands, object"""
         
         frames_processed = []
         gaze_processed = []
@@ -92,14 +94,17 @@ class DataProcessor:
 
 
         for f, g, h, o, i in zip(frames, gaze, hands, obdets, imu):
+            
 
+            # Resize frame
             img_rs = cv2.resize(f, (512, 512), interpolation=cv2.INTER_LINEAR)
             frames_processed.append(img_rs)
 
-            # Process IMU data
-                
+            # no IMU processing
             imu_processed.append(i)
 
+
+            # Process gaze data, normalizing coordinates to [0, 1] range whilst ensuring valid data values prior to normalization and ensuring valid error handling.
             if g is not None and len(g) > 0:
                 projs = []
                 for gaze_point in g:
@@ -144,7 +149,7 @@ class DataProcessor:
             
 
             hands = []
-            # Process left palm
+            # Process Hand landmarks, normalizing coordinates to [0, 1] range and ensuring valid data values prior to normalization.
             if h is not None:
                 if 'left_wrist' in h and h['left_wrist'] is not None:
                     left_wrist_normal = (h['left_wrist'][0], h['left_wrist'][1])
@@ -192,11 +197,13 @@ class DataProcessor:
             hands = np.array(hands, dtype=object).flatten().tolist()  # Flatten the list to match expected format
             hands_processed.append(hands)
 
-            # Process object detections
+            # Process object detections by producing fixed-length feature vectors for a subset of objects.
             if o is not None and len(o) > 0:
                 features = self.process_object_detections_with_gaze(o, gaze_processed[-1])
                 object_detections_processed.append(features)
             
+
+            # return a dictionary of processed data
             processed = {'frames': frames_processed,
                     'gaze': gaze_processed,
                     'imu': imu_processed,
@@ -208,7 +215,11 @@ class DataProcessor:
 
     def vrs_processing(self, path, preds_path=None, callbacks=None): 
         
+        """Fully Processes VRS data from a given .vrs file, extracting data and aligning various modalities such as images, 
+        gaze, hands, and object detections, before fully evaluating driving performance.
+        Essentially this is the entire data processing and evaulation pipeline for VRS data."""
         
+
         if callbacks is None:
             callbacks = {}
 
@@ -289,6 +300,11 @@ class DataProcessor:
         vde.evaluate_driving(processed_data,object_dets_raw, video_save_path, progress_callback=callbacks.get('driving_evaluation'))
         vde.score_driver(vde.result)
 
+        # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'
+        # vde.get_slam_data(slam_path)
+
+        # vde.save_data(output_path)
+
 
 
         return vde.result
@@ -298,10 +314,7 @@ class DataProcessor:
 
 
 
-        # slam_path = os.path.join('/',*split, 'mps_SensorTest_vrs/slam'
-        # vde.get_slam_data(slam_path)
 
-        # vde.save_data(output_path)
 
 
 

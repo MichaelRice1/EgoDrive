@@ -5,17 +5,25 @@ import os
 import pandas as pd 
 import matplotlib.pyplot as plt
 
+
+
 class EgoDriveAriaDataset():
+
+    """Dataset class for EgoDrive Aria dataset.
+    Used by the main data processing pipeline to process driving data into a dataset of samples."""
 
     def __init__(self, data, image_size, frames_per_clip, annotations_path=None):
         
-        
+    
         self.data = data
         self.image_size = image_size
         self.frames_per_clip = frames_per_clip
         self.annotations_path = annotations_path
 
     def processed_annotations(self, len_frames ,annotations):
+
+        """Process driving session annotations to ensure clips of a fixed length, without overlaps (except for 'driving' action)."""
+
         expanded = pd.DataFrame(columns=['start_frame', 'end_frame', 'action'])
 
         for _, row in annotations.iterrows():
@@ -69,6 +77,10 @@ class EgoDriveAriaDataset():
         return expanded 
     
     def evaluate_data_point(self, data, save_path):
+
+        """Evaluate a single data sample by saving visualizations and plots."""
+
+
         frames = data['frames']
         gaze = data['gaze']
         imu_data = data['imu']
@@ -164,12 +176,16 @@ class EgoDriveAriaDataset():
         video_writer.release()
 
     def process_object_detections_with_gaze(self, detections, gaze_point):
+
         """
-        Enhanced object features including gaze-relative information
-        Features per object: [presence, x, y, width, height, gaze_intersects, gaze_distance]
+        Produces a feature vector for object detections with possible gaze interaction.
+        Features per object: [presence, x, y, width, height]
         """
+
+
         target_objects = ['Right Wing Mirror', 'Left Wing Mirror', 'Rearview Mirror', 
                         'Mobile Phone']
+        
         features = np.zeros(20)  # 4 objects × 5 features each
         
         if gaze_point is not None and len(gaze_point) >= 2:
@@ -218,7 +234,9 @@ class EgoDriveAriaDataset():
         return features
 
     def is_gaze_in_bbox(self,gx, gy, detection):
+
         """Check if normalized gaze point is within detection bounding box"""
+
         # Convert detection bbox to normalized coordinates
         x = detection[0]
         y = detection[1]
@@ -229,6 +247,10 @@ class EgoDriveAriaDataset():
         return (x <= gx <= x + width) and (y <= gy <= y + height)
 
     def process_folder(self, data, annotations_path):
+
+        """Process a specific driving session, extracting samples and saving them."""
+
+
         if not os.path.exists(annotations_path):
             print(f"Annotations {annotations_path} does not exist. Skipping.")
             return
@@ -271,7 +293,7 @@ class EgoDriveAriaDataset():
             object_detections_segment = data['modalities']['object_detections'][start:end+1]
 
 
-            last_valid_gaze = None  # Initialize outside your loop
+            last_valid_gaze = None  # Initialize outside loop
 
             # Resize images and normalize gaze coordinates
             for f, g, h, o, i in zip(frames_segment, gaze_segment, hand_landmarks_segment, object_detections_segment, imu_segment):
@@ -401,6 +423,9 @@ class EgoDriveAriaDataset():
         
     def write_drive(self):
 
+        """Main method to process the EgoDrive Aria dataset and save samples."""
+
+        
         self.process_folder(self.data, self.annotations_path)
 
         

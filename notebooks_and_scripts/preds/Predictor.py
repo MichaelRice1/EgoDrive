@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import sys
-sys.path.append('/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/notebooks_and_scripts/')
+sys.path.append('MSc_AI_Thesis/notebooks_and_scripts/')
 from model_and_training.EgoDriveMax import EgoDriveMultimodalTransformer
 from dataset_scripts.EgoDriveAriaDataset import EgoDriveAriaDataset
 import cv2
@@ -11,6 +11,8 @@ import tqdm
 
 class Predictor:
 
+    """Predictor class for processing and predicting using EgoDrive data."""
+
     def __init__(self,data = None, data_path = None):
         if data is not None:
             self.data = data
@@ -18,65 +20,12 @@ class Predictor:
             if not data_path.endswith('.npy'):
                 raise ValueError("data_path must point to a .npy file")
             else:
-                self.data = np.load(data_path, allow_pickle=True).item()['modalities']
-    
-    def process_object_detections_with_gaze(self, detections, gaze_point):
-        pass
-    #     """
-    #     Enhanced object features including gaze-relative information
-    #     Features per object: [presence, x, y, width, height, gaze_intersects, gaze_distance]
-    #     """
-    #     target_objects = ['Right Wing Mirror', 'Left Wing Mirror', 'Rearview Mirror', 
-    #                     'Mobile Phone']
-    #     features = np.zeros(20)  # 4 objects × 5 features each
+                self.data = np.load(data_path, allow_pickle=True).item()['modalities'] 
+
+    def preprocess(self, frames_segment, gaze_segment, hand_landmarks_segment, object_detections_segment, imu_segment):
         
-    #     if gaze_point is not None and len(gaze_point) >= 2:
-    #         gx, gy = gaze_point[0], gaze_point[1]
-    #         self.last_valid_gaze = gaze_point
+        """Preprocesses the segments of frames, gaze, hand landmarks, object detections, and IMU data."""
 
-    #     elif gaze_point is None or len(gaze_point) < 2:
-    #         gx, gy = self.last_valid_gaze[0], self.last_valid_gaze[1]
-        
-        
-    #     for i, obj_class in enumerate(target_objects):
-    #         start_idx = i * 5
-
-    #         classes = [d['class'] for d in detections if 'class' in d]
-
-    #         if obj_class in classes:
-                
-    #             entry = next((d for d in detections if d.get('class') == obj_class), None)
-    #             # Standard object features
-    #             bbox = entry.get('bounding_box', {})
-    #             x = bbox[0]
-    #             y = bbox[1]
-    #             width = bbox[2] - bbox[0]
-    #             height = bbox[3] - bbox[1]
-
-    #             # Normalize coordinates
-    #             x = x / 512
-    #             y = y / 512
-    #             width = width / 512
-    #             height = height / 512
-
-    #             det = [x, y, width, height]
-
-
-    #             features[start_idx + 0] = 1.0  
-    #             features[start_idx + 1] = x
-    #             features[start_idx + 2] = y
-    #             features[start_idx + 3] = width
-    #             features[start_idx + 4] = height
-
-                
-    #             # Gaze-object interaction features
-    #             # features[start_idx + 5] = 1.0 if self.is_gaze_in_bbox(gx, gy, det) else 0.0
-                
-                
-    #     return features
-    
-    # def preprocess(self, frames_segment, gaze_segment, hand_landmarks_segment, object_detections_segment, imu_segment):
-        
         frames_processed = []
         gaze_processed = []
         hands_processed = []
@@ -201,6 +150,9 @@ class Predictor:
         return sample
 
     def dict_transform(self,x):
+
+        """Transforms the input dictionary to match the model's expected input format."""
+
         return {
             'frames': x['frames'],
             'gaze': x['gaze'],
@@ -209,16 +161,15 @@ class Predictor:
             'objects': x['object_detections']
         }
 
-
     def instantiate(self, checkpoint_path = 'RT'):
 
-
+        """Instantiates the model and loads the checkpoint."""
 
         if checkpoint_path == 'RT':
-            checkpoint_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/models/EgoDriveRT.ckpt'
+            checkpoint_path = 'MSc_AI_Thesis/models/EgoDriveRT.ckpt'
             self.light = True
         else:
-            checkpoint_path = '/Users/michaelrice/Documents/GitHub/Thesis/MSc_AI_Thesis/models/EgoDriveMax.ckpt'
+            checkpoint_path = 'MSc_AI_Thesis/models/EgoDriveMax.ckpt'
             self.light = False
 
         self.model = EgoDriveMultimodalTransformer(
@@ -243,9 +194,10 @@ class Predictor:
         self.model.eval()
         self.model.to(device)
     
-    
     def run(self, overlap = 0.5, fpc = 32):
         
+        """Runs the prediction on the data with specified overlap and frames per chunk (fpc)."""
+
         preds = []
 
         self.instantiate()

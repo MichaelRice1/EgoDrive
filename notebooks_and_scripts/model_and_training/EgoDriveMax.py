@@ -1,20 +1,12 @@
-import torch
 import timm
 import torch.nn as nn
 import torch.nn.functional as F
 import os
-import os
 import torch
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import os
-import torch
-from typing import Any
 from torchvision import models
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
-
+# Multimodal Transformer Architecture inspired by https://github.com/facebookresearch/reading_in_the_wild.
 
 class GazeEncoder(nn.Module):
     """
@@ -405,7 +397,9 @@ class HandEncoder(nn.Module):
         return output_features  
     
 class TemporalPooling(nn.Module):
+
     """Pools temporal dimension for video sequences"""
+
     def __init__(self, dim):
         super().__init__()
         
@@ -420,7 +414,6 @@ class TemporalPooling(nn.Module):
         pool_token = self.pool_token.expand(b, f, -1, -1)
         x_with_pool = torch.cat([pool_token, x], dim=2)
 
-        # Reshape for attention
         x_flat = x_with_pool.view(b * f, n + 1, d)
         pooled, _ = self.attention(x_flat[:, :1], x_flat, x_flat)
         pooled = pooled.view(b, f, d)
@@ -428,7 +421,9 @@ class TemporalPooling(nn.Module):
         return pooled
 
 class TemporalTransformerBlock(nn.Module):
+
     """Transformer block with temporal positional encoding"""
+
     def __init__(self, dim, heads=8, dim_head=64, mlp_ratio=4, dropout=0.1):
         super().__init__()
         self.norm1 = nn.LayerNorm(dim)
@@ -461,6 +456,7 @@ class TemporalTransformerBlock(nn.Module):
         return x
 
 class EgoDriveMultimodalTransformer(nn.Module):
+
     def __init__(
         self,
         dim_feat,

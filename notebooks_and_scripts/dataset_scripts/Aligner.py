@@ -6,17 +6,18 @@ from scipy.interpolate import interp1d
 
 class EgoDriveAriaAligner:
     """
-    Simple, optimized alignment for Project Aria data for action recognition training.
+    Simple, optimized alignment for Project Aria data for driving based action recognition training.
     
-    Single best approach: Visual frames drive alignment, all other modalities 
-    aligned using nearest neighbor with temporal bounds.
+    Uses RGB frames as primary temporal reference, with other modalities aligned to this timeline.
+    Individual alignment methodologies used per modality.
+    
     """
     
     def __init__(self, data, primary_visual_modality: str = 'rgb', max_time_gap: float = 5e7):
         """
         Args:
-            primary_visual_modality: The visual modality that drives frame timing ('rgb', 'slam', 'et')
-            max_time_gap: Maximum time difference for alignment (default 50ms)
+            primary_visual_modality: The visual modality that drives frame timing, always 'rgb' for us. 
+            max_time_gap: Maximum time difference for alignment 
         """
         self.primary_modality = primary_visual_modality
         self.data = data
@@ -26,22 +27,13 @@ class EgoDriveAriaAligner:
         self.aligned_data = None
     
     def add_modality(self, name: str, data_dict: Dict[float, Any]):
-        """Add a modality's data dictionary (timestamp -> data)"""
+
+        """Add a modality's data dictionary (timestamp -> data) to the aligner, ready for alignment."""
+
         if name == 'object_detections':
             timestamps = self.frame_timestamps
             data_dict = {ts: val for ts,val in zip(timestamps, data_dict)}
-        # elif name == 'gaze':
-        #     timestamps = data_dict['tracking_timestamp_us']
-        #     timestamps = np.array([t * 1000 for t in timestamps])  # Convert to nanoseconds
-        #     data_dict = {ts: {
-        #         'projected_point_2d_x': data_dict.loc[data_dict['tracking_timestamp_us'] == ts // 1000, 'projected_point_2d_x'].values[0],
-        #         'projected_point_2d_y': data_dict.loc[data_dict['tracking_timestamp_us'] == ts // 1000, 'projected_point_2d_y'].values[0],
-        #         'transformed_gaze_x': data_dict.loc[data_dict['tracking_timestamp_us'] == ts // 1000, 'transformed_gaze_x'].values[0],
-        #         'transformed_gaze_y': data_dict.loc[data_dict['tracking_timestamp_us'] == ts // 1000, 'transformed_gaze_y'].values[0],
-        #         'transformed_gaze_z': data_dict.loc[data_dict['tracking_timestamp_us'] == ts // 1000, 'transformed_gaze_z'].values[0],
-        #         'depth_m': data_dict.loc[data_dict['tracking_timestamp_us'] == ts // 1000, 'depth_m'].values[0]
-        #     } for ts in timestamps}
-            
+    
         else:
             timestamps = np.array(sorted(data_dict.keys()))
             timestamps = timestamps.astype(np.int64)
@@ -91,7 +83,6 @@ class EgoDriveAriaAligner:
                 }
                 print(f"  {mod_name}: 100% (primary)")
             else:
-                # Other modalities: nearest neighbor alignment
                 aligned_data, time_diffs = self._align_to_frames(
                     mod_data['data'], mod_data['timestamps'], self.frame_timestamps, mod_name
                 )
@@ -126,7 +117,10 @@ class EgoDriveAriaAligner:
                     timestamps: np.ndarray, 
                     frame_timestamps: np.ndarray,
                     mod_name) -> tuple:
-        """Align modality data to frame timestamps """
+        
+        """Align modality data to frame timestamps from main data dictionary.
+        Returns aligned data and time differences."""
+
         aligned_data = []
         time_diffs = []
 
@@ -222,7 +216,9 @@ class EgoDriveAriaAligner:
             return aligned_data, time_diffs
     
     def print_summary(self):
+
         """Print alignment summary"""
+
         if self.aligned_data is None:
             print("No alignment performed yet.")
             return
@@ -242,6 +238,8 @@ class EgoDriveAriaAligner:
         print(f"\nAverage completion: {avg_completion:.1%}")
 
     def align_drive(self):
+
+        """Main method to align driving data for action recognition training."""
         
         aligner = EgoDriveAriaAligner(
             data=self.data,

@@ -9,6 +9,8 @@ from torch.utils.data import DataLoader
 
 class Train():
 
+    """Train class for the EgoDrive multimodal transformer model."""
+
     def __init__(self, light = True, ablation=False):
         self.light = light
         self.ablation = ablation
@@ -17,10 +19,9 @@ class Train():
         random.seed(13)
         torch.backends.cudnn.deterministic = True
 
-
     def build_data(self, ablation):
         dataset = AriaMultimodalTrainDataset(
-            root_dir='/Users/michaelrice/Desktop/data backup/224_reduced_obj',
+            root_dir='data backup/224_reduced_obj',
             transform=transforms.Compose([
                 transforms.Lambda(dict_transform)
             ])

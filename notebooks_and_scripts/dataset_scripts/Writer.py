@@ -7,6 +7,10 @@ sys.path.append('MSc_AI_Thesis/notebooks_and_scripts/')
 from DataExtractionMain import DataProcessor
 
 class Writer:
+
+    """Writer class to process and align EgoDrive data."""
+
+
     def __init__(self,folder_path):
 
         self.folder_path = folder_path
@@ -14,6 +18,8 @@ class Writer:
 
     def write(self, folder_path, completed_folders=None):
 
+        """Process and align EgoDrive data from the specified folder."""
+        
         folders = os.listdir(folder_path)
         
 
@@ -39,15 +45,15 @@ class Writer:
                 np.save(data_path, aligned_data, allow_pickle=True)
                 del data
 
-                # annotations_path = os.path.join(folder_path, 'actions.csv')
-                # dataset_creator = EgoDriveAriaDataset(aligned_data, image_size=224, frames_per_clip=32, annotations_path=annotations_path)
-                # dataset_creator.process_folder(aligned_data, annotations_path)
+                annotations_path = os.path.join(folder_path, 'actions.csv')
+                dataset_creator = EgoDriveAriaDataset(aligned_data, image_size=224, frames_per_clip=32, annotations_path=annotations_path)
+                dataset_creator.process_folder(aligned_data, annotations_path)
 
-                # # Flush data from mem
+                # Flush data from mem
                 
-                # del aligned_data
-                # del dataset_creator
-                # del aligner
+                del aligned_data
+                del dataset_creator
+                del aligner
 
 
 
