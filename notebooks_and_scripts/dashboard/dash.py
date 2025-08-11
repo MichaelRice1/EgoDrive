@@ -2,13 +2,15 @@ import streamlit as st
 import os
 import subprocess
 import time
-from streamlit_autorefresh import st_autorefresh
+# from streamlit_autorefresh import st_autorefresh
 import sys
 sys.path.append('MSc_AI_Thesis/notebooks_and_scripts')
 from dataset_scripts.vrs_extractor import VRSDataExtractor
 from dataset_scripts.DataExtractionMain import DataProcessor
 import json
 from llama_cpp import Llama
+
+
 
 st.set_page_config(page_title="Driver Scoring Dashboard", layout="centered")
 
@@ -17,6 +19,7 @@ st.title("🚗 Driver Scoring Dashboard")
 root_dir = "MSc_AI_Thesis/notebooks_and_scripts/dashboard/test_data"
 session_folders = [f for f in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, f))]
 
+# Loading the local LLM
 with st.spinner("⏳ Loading LLM..."):
     llm = Llama(model_path="MSc_AI_Thesis/utilities/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
     n_ctx=2048,        
@@ -29,14 +32,18 @@ with st.spinner("⏳ Loading LLM..."):
 res = {}
 
 def check_files_exist(files):
+
+    """ Check if all files in the list exist."""
+
     for file in files:
         if not os.path.exists(file):
             return False
     return True
 
-# Main prompt with better structure and context
 def generate_driving_feedback_prompt(results_dict, mirror_scores, overall_score):
-    # Calculate which areas need attention
+
+    """ Generate a prompt for the local LLM based on the results dictionary and mirror scores."""
+
     weak_areas = []
     
     left_mirror_score = mirror_scores.get('left', 0) * 100
@@ -96,36 +103,51 @@ TASK: Provide specific improvement strategies for the identified weak areas only
 
     return prompt
 
-
 def frame_progress_callback(current, total):
+
+    """ Update the frame extraction progress bar and status text."""
+
     percent = int((current / total) * 100)
     frame_progress.progress(percent, text=f"Frame Extraction: {percent}%")
     frame_progress_status.text(f"Extracted {current}/{total} frames")
 
 def object_detection_progress(current, total):
+
+    """ Update the object detection progress bar and status text."""
+
     percent = int((current / total) * 100)
     obj_det_progress.progress(percent, text=f"Object Detection: {percent}%")
     obj_det_status.text(f"Processed {current}/{total} frames")
 
 def driver_evaluation_progress(current, total):
+
+    """ Update the driver evaluation progress bar and status text."""
+
     percent = int((current / total) * 100)
     dr_eval_progress.progress(percent, text=f"Driver Evaluation: {percent}%")
     dr_eval_status.text(f"Evaluated {current}/{total} frames")
 
 def find_vrs_file(folder_path):
+
+    """ Find the first .vrs file in the specified folder."""
+
     for fname in os.listdir(folder_path):
         if fname.endswith(".vrs") and not fname.startswith("._"):
             return fname  # Return the first .vrs file found
     return None
 
 def check_output_folder(folder_path, base_name):
+
+    """ Check if the output folder for the processed data exists."""
+
     mps = f'mps_{base_name}_vrs'
     output_folder = os.path.join(folder_path, mps)
     return os.path.exists(output_folder) and os.path.isdir(output_folder)
 
 def get_driving_feedback(results_dict, mirror_scores, overall_score):
 
-    # Prepare the prompt for local LLM
+    """ Generate driving feedback using the local LLM based on the results dictionary and mirror scores."""
+
     prompt = generate_driving_feedback_prompt(results_dict, mirror_scores, overall_score)
 
     full_prompt = system_prompt + "\n\n" + prompt + 'Ensure your response fits directly within the designated tokens.'
@@ -257,7 +279,7 @@ with col5:
 
 
 
-
+# Process the data when the button is clicked
 if process_btn and not st.session_state.processing:
     st.session_state.review_mode = False  
     st.session_state.preview_mode = False
@@ -311,6 +333,7 @@ if process_btn and not st.session_state.processing:
     else:
         st.warning("⚠️ No .vrs files found in the selected folder.")
 
+# Preview the annotated video data when the button is clicked
 if preview_btn:
     st.session_state.review_mode = False 
     st.session_state.llm_mode = False
@@ -326,8 +349,7 @@ if preview_btn:
     else:
         st.video(video_bytes)
 
-
-
+# Show the session scores when the button is clicked
 if score_btn:
     if not st.session_state.results_dict or 'scores' not in st.session_state.results_dict:
         st.warning("⚠️ No scores available. Please process the data first.")
@@ -360,10 +382,9 @@ if score_btn:
 
         st.markdown("---")
 
-
-
-
+# Provide tips for improvement when the button is clicked
 if tips_btn:
+
     if not st.session_state.results_dict or 'scores' not in st.session_state.results_dict:
         st.warning("⚠️ No scores available. Please process the data first.")
     else:
@@ -402,11 +423,9 @@ if tips_btn:
                                         {'left': left_mirror_score,
                                         'right': right_mirror_score,
                                         'rearview': rearview_mirror_score},
-                                        overall_score)
-            
-    
-    
-
+                                        overall_score)      
+        
+# review mistakes when the button is clicked      
 if review_btn:
     if not st.session_state.results_dict or 'mistake_videos_directory' not in st.session_state.results_dict:
         st.warning("⚠️ No mistakes found in the session. Please process the data first.")
@@ -416,8 +435,7 @@ if review_btn:
         st.session_state.llm_mode = False
         st.session_state.review_mode = True
 
-# Move the video review logic OUTSIDE the button check
-# This ensures it persists across reruns when selectbox changes
+# Check if review mode is active and results data is available
 if hasattr(st.session_state, 'review_mode') and st.session_state.review_mode:
     if st.session_state.results_dict and 'mistake_videos_directory' in st.session_state.results_dict:
         try:
@@ -564,14 +582,12 @@ if hasattr(st.session_state, 'review_mode') and st.session_state.review_mode:
 
 
 
-
 # Auto-refresh every 30 seconds (30000 milliseconds)
 # if not st.session_state.processing and not st.session_state.review_mode and not st.session_state.preview_mode and not st.session_state.llm_mode:
 #     st_autorefresh(interval=30000, key="datarefresh")
 
 
-
-
+# Check if processing is ongoing and files are being generated
 if st.session_state.processing and not st.session_state.process_finished:
     elapsed = int(time.time() - st.session_state.start_time)
     st.info(f"⏳ Waiting for output files... elapsed time: {elapsed // 60}m {elapsed % 60}s")
@@ -590,17 +606,14 @@ if st.session_state.processing and not st.session_state.process_finished:
         st.error("⏰ Timeout: Output files not found after 20 minutes.")
         st.session_state.processing = False
 
+# Show success message if processing is finished
 if st.session_state.process_finished:
     st.success("You can now score the driver.")
 
-
-
-
-
+# Show the tips for improvement if available
 if st.session_state.tips_output:
     st.info("💡 Tips for driving improvement:")
     st.write(f"**Tips for improvement:** {st.session_state.tips_output}")
-
 
 
 # Add some bottom padding
