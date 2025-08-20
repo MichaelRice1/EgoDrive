@@ -16,7 +16,6 @@ from datetime import datetime
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
 
-# Training Classifier inspired by https://github.com/facebookresearch/reading_in_the_wild.
 
 
 class WarmupScheduler(_LRScheduler):
@@ -34,6 +33,18 @@ class WarmupScheduler(_LRScheduler):
         if self.last_epoch < self.warmup_steps:
             return [base_lr * (self.last_epoch + 1) / self.warmup_steps for base_lr in self.base_lrs]
         return [base_lr for base_lr in self.base_lrs]
+
+
+
+'''
+Citation: AI Used in the creation of this classifier.
+Model : Claude Sonnet 4.1, Anthropic
+Date: 2025-07-02
+Use Case: Produced a initial template structure for a PyTorch Lightning module for EgoDrive classification tasks, based on the one 
+used in https://github.com/facebookresearch/reading_in_the_wild. The template, which included basic methods for training, validation 
+and testing was using as a starting point for the EgoDriveClassifier, and was thus refined through my own iteration until the final, 
+operational version was as seen below.
+'''
 
 
 class EgoDriveClassifier(L.LightningModule):

@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 
 class EgoDriveAriaAligner:
     """
-    Simple, optimized alignment for Project Aria data for driving based action recognition training.
+    Alignment class for Project Aria data for driving based action recognition training.
     
     Uses RGB frames as primary temporal reference, with other modalities aligned to this timeline.
     Individual alignment methodologies used per modality.

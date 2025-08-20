@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 
 class EgoDriveAriaDataset():
 
-    """Dataset class for EgoDrive Aria dataset.
-    Used by the main data processing pipeline to process driving data into a dataset of samples."""
+    """Dataset class for EgoDrive Aria dataset.Used by the main data processing pipeline to process driving data 
+    into a dataset of samples.
+    Some minimal final data processing inlcuded"""
 
     def __init__(self, data, image_size, frames_per_clip, annotations_path=None):
         

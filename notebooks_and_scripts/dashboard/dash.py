@@ -81,25 +81,25 @@ def generate_driving_feedback_prompt(results_dict, mirror_scores, overall_score)
 
     prompt = f"""DRIVING SESSION ANALYSIS
 
-PERFORMANCE SUMMARY:
-• Overall Score: {overall_score:.1f}%
-• Session Duration: ~{session_duration_minutes:.1f} minutes
-• Total Behaviors Analyzed: 8 categories
+    PERFORMANCE SUMMARY:
+    • Overall Score: {overall_score:.1f}%
+    • Session Duration: ~{session_duration_minutes:.1f} minutes
+    • Total Behaviors Analyzed: 8 categories
 
-CURRENT PERFORMANCE LEVELS:
-✓ Left Wing Mirror: {left_mirror_score:.1f}% (Target: 90%+)
-✓ Right Wing Mirror: {right_mirror_score:.1f}% (Target: 90%+)  
-✓ Rearview Mirror: {rearview_mirror_score:.1f}% (Target: 90%+)
-✓ One-Handed Driving: {results_dict['one_handed_percent']:.1f}% (Target: <5%)
-✓ Crossover Steering: {results_dict['crossover_occurrences']:.1f}% (Target: <2%)
-✓ Infotainment Distraction: {results_dict['infotainment_distraction_count']:.1f}% (Target: <3%)
-✓ Speedometer Monitoring: {speedometer_checks} checks (Target: {expected_speed_checks}+)
-✓ Gaze Focus Duration: {gaze_duration:.1f}s (Target: 0.5-2.0s)
+    CURRENT PERFORMANCE LEVELS:
+    ✓ Left Wing Mirror: {left_mirror_score:.1f}% (Target: 90%+)
+    ✓ Right Wing Mirror: {right_mirror_score:.1f}% (Target: 90%+)  
+    ✓ Rearview Mirror: {rearview_mirror_score:.1f}% (Target: 90%+)
+    ✓ One-Handed Driving: {results_dict['one_handed_percent']:.1f}% (Target: <5%)
+    ✓ Crossover Steering: {results_dict['crossover_occurrences']:.1f}% (Target: <2%)
+    ✓ Infotainment Distraction: {results_dict['infotainment_distraction_count']:.1f}% (Target: <3%)
+    ✓ Speedometer Monitoring: {speedometer_checks} checks (Target: {expected_speed_checks}+)
+    ✓ Gaze Focus Duration: {gaze_duration:.1f}s (Target: 0.5-2.0s)
 
-AREAS REQUIRING ATTENTION ({len(weak_areas)} identified):
-{chr(10).join(f"• {area}" for area in weak_areas) if weak_areas else "• All areas performing well!"}
+    AREAS REQUIRING ATTENTION ({len(weak_areas)} identified):
+    {chr(10).join(f"• {area}" for area in weak_areas) if weak_areas else "• All areas performing well!"}
 
-TASK: Provide specific improvement strategies for the identified weak areas only. Focus on immediate, actionable techniques the driver can practice."""
+    TASK: Provide specific improvement strategies for the identified weak areas only. Focus on immediate, actionable techniques the driver can practice."""
 
     return prompt
 

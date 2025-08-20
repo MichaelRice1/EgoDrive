@@ -14,6 +14,8 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 
 class DataProcessor:
+
+    '''Class that brings togehter all data extraction elements of the data processing pipeline'''
     
     def process_object_detections_with_gaze(self, detections, gaze_point):
 

@@ -6,7 +6,8 @@ import torch
 from torchvision import models
 os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
 
-# Multimodal Transformer Architecture inspired by https://github.com/facebookresearch/reading_in_the_wild.
+# Temporal Pooling and Temporal Transformer Blocks inspired by https://github.com/facebookresearch/reading_in_the_wild.
+
 
 class GazeEncoder(nn.Module):
     """
@@ -395,7 +396,8 @@ class HandEncoder(nn.Module):
         output_features = self.layer_norm(attended_features + fused_features)
         
         return output_features  
-    
+
+
 class TemporalPooling(nn.Module):
 
     """Pools temporal dimension for video sequences"""
@@ -422,7 +424,7 @@ class TemporalPooling(nn.Module):
 
 class TemporalTransformerBlock(nn.Module):
 
-    """Transformer block with temporal positional encoding"""
+    """Transformer block for temporal modeling"""
 
     def __init__(self, dim, heads=8, dim_head=64, mlp_ratio=4, dropout=0.1):
         super().__init__()

@@ -36,7 +36,7 @@ class Predictor:
 
 
         for f, g, h, o, i in zip(frames_segment, gaze_segment, hand_landmarks_segment, object_detections_segment, imu_segment):
-                # Resize image
+            # Resize image
 
             img_rs = cv2.resize(f, (224, 224), interpolation=cv2.INTER_LINEAR)
             frames_processed.append(img_rs)

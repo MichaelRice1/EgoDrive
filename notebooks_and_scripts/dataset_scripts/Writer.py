@@ -8,7 +8,8 @@ from DataExtractionMain import DataProcessor
 
 class Writer:
 
-    """Writer class to process and align EgoDrive data."""
+    """Final Writer class to process and align EgoDrive data.
+        Essentially the entire processsing pipeline."""
 
 
     def __init__(self,folder_path):
@@ -59,7 +60,7 @@ class Writer:
 
 
 if __name__ == "__main__":
-    folder_path = '/Volumes/MichaelSSD/EgoDrive/RawDataset(VRS&MPS)'
+    folder_path = 'RawDataset(VRS&MPS)'
     written_folders = ['Drive1', 'Drive2', 'Drive3', 'Drive5', 'Drive6', 'Drive7', 'Drive8', 'Drive9', 'Drive10', 'Drive13', 'Drive14', 'Drive15']
     writer = Writer(folder_path)
     writer.write(folder_path, written_folders)

@@ -20,6 +20,8 @@ class Train():
         torch.backends.cudnn.deterministic = True
 
     def build_data(self, ablation):
+
+        
         dataset = AriaMultimodalTrainDataset(
             root_dir='data backup/224_reduced_obj',
             transform=transforms.Compose([
