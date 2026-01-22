@@ -2,12 +2,12 @@
 
 
 <p align="center">
- <img src="images_gifs/output3.gif" width="49%" alt="Annotated Dataset Samples" />
- <img src="images_gifs/final2.gif" width="49%" alt="Predictions" />
+ <img src="images_gifs_paper/output3.gif" width="49%" alt="Annotated Dataset Samples" />
+ <img src="images_gifs_paper/final2.gif" width="49%" alt="Predictions" />
 </p>
 
 <p align="center">
-<img src="images_gifs/dash.gif" alt="Driver Feedback Dashboard" width="100%">
+<img src="images_gifs_paper/dash.gif" alt="Driver Feedback Dashboard" width="100%">
 </p>
 
 
