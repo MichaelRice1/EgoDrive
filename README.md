@@ -10,7 +10,12 @@
 <img src="images_gifs/dash.gif" alt="Driver Feedback Dashboard" width="100%">
 </p>
 
-📄 **Paper:** [Paper Link (ACL Anthology)] (https://aclanthology.org/2025.gaze4nlp-1.3/#)
+
+## 📄 Paper
+
+**[EgoDrive: Egocentric Multimodal Driver Behavior Recognition Using Project Aria](https://aclanthology.org/2025.gaze4nlp-1.3/#)**  
+Michael Rice, Lorenz Krause, Waqar Shahid Qureshi
+
 
 ## 🚗 Overview
 
